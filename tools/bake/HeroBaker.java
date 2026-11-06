@@ -451,7 +451,7 @@ public class HeroBaker {
         }
     }
     // ================================================================== packing
-    static int AW=2048,AH=2048;static float texelsPerMetre;
+    static int AW=512,AH=512;static float texelsPerMetre;
     static void pack(){
         // lay every chart with its long side horizontal (better shelf packing); the tangent turns with the uvs so
         // the normal map and parallax stay aligned: (u,v) -> (v,-u) and T -> cross(N,T)
@@ -459,7 +459,7 @@ public class HeroBaker {
             for(float[] q:c.verts){float u=q[9],vv=q[10];q[9]=vv;q[10]=-u;float[] N=v(q[3],q[4],q[5]),T=v(q[6],q[7],q[8]);float[] B=cross(N,T);q[6]=B[0];q[7]=B[1];q[8]=B[2];}
             float a=c.minU,b=c.maxU;c.minU=c.minV;c.maxU=c.maxV;c.minV=-b;c.maxV=-a;}
         float density=5000;   // texels per metre, shrunk until everything fits
-        for(int tries=0;tries<60;tries++){if(tryPack(density))break;density*=.95f;}
+        for(int tries=0;tries<160;tries++){if(tryPack(density))break;density*=.95f;}
         texelsPerMetre=densityUsed;
         for(Chart c:charts)for(float[] q:c.verts){float u=(c.px+4+(q[9]-c.minU)*densityUsed)/AW,vv=(c.py+4+(q[10]-c.minV)*densityUsed)/AH;q[9]=u;q[10]=vv;}
     }

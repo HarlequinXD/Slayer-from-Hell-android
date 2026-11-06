@@ -63,7 +63,7 @@ final class Tex {
     }
 
     static Mat make(int id){
-        int n=id>=GUNMETAL?256:512;Paint P=new Paint(n);float pom=.04f,tile=.5f,normalK=4,emit=0;
+        int n=256;Paint P=new Paint(n);float pom=.04f,tile=.5f,normalK=4,emit=0;
         switch(id){
             case BRICK:brick(P);pom=.06f;tile=.5f;normalK=5;break;
             case METAL_PANEL:metalPanel(P);pom=.035f;tile=.5f;normalK=4;break;

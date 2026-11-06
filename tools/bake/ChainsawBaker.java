@@ -431,7 +431,7 @@ public class ChainsawBaker {
     static float[] cp(float[] a,float[] o){return v(a[0]+a[4]*o[0],o[1],a[1]+a[5]*o[0]);}
     static float[] vx(float[] p,float[] n,float[] t,float u,float vv){return new float[]{p[0],p[1],p[2],n[0],n[1],n[2],t[0],t[1],t[2],u,vv};}
     // ================================================================== packing
-    static int AW=2048,AH=2048;static float texelsPerMetre;
+    static int AW=512,AH=512;static float texelsPerMetre;
     static void pack(){
         // lay every chart with its long side horizontal (better shelf packing); the tangent turns with the uvs so
         // the normal map and parallax stay aligned: (u,v) -> (v,-u) and T -> cross(N,T)
@@ -439,7 +439,7 @@ public class ChainsawBaker {
             for(float[] q:c.verts){float u=q[9],vv=q[10];q[9]=vv;q[10]=-u;float[] N=v(q[3],q[4],q[5]),T=v(q[6],q[7],q[8]);float[] B=cross(N,T);q[6]=B[0];q[7]=B[1];q[8]=B[2];}
             float a=c.minU,b=c.maxU;c.minU=c.minV;c.maxU=c.maxV;c.minV=-b;c.maxV=-a;}
         float density=5000;   // texels per metre, shrunk until everything fits
-        for(int tries=0;tries<60;tries++){if(tryPack(density))break;density*=.95f;}
+        for(int tries=0;tries<160;tries++){if(tryPack(density))break;density*=.95f;}
         texelsPerMetre=densityUsed;
         for(Chart c:charts)for(float[] q:c.verts){float u=(c.px+4+(q[9]-c.minU)*densityUsed)/AW,vv=(c.py+4+(q[10]-c.minV)*densityUsed)/AH;q[9]=u;q[10]=vv;}
     }

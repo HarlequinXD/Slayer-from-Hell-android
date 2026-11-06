@@ -31,7 +31,8 @@ final class Game implements GLSurfaceView.Renderer {
     @Override public void onSurfaceCreated(GL10 unused,EGLConfig cfg){
         prog=Gfx.program(Shaders.VS_PBR,Shaders.FS_PBR);progDecal=Gfx.program(Shaders.VS_DECAL,Shaders.FS_DECAL);progPart=Gfx.program(Shaders.VS_PART,Shaders.FS_PART);uni.clear();
         java.util.ArrayList<float[]>[] geo=level.build();levelMesh=new Gfx.Mesh[Tex.COUNT];for(int i=0;i<Tex.COUNT;i++)levelMesh[i]=new Gfx.Mesh(geo[i].get(0));
-        float[][] g=Gun.build();parts=new Gfx.Mesh[g.length];for(int i=0;i<g.length;i++)parts[i]=new Gfx.Mesh(g[i]);
+        float[][] g=Gun.build();parts=new Gfx.Mesh[g.length];for(int i=0;i<g.length;i++)parts[i]=g[i]==null?null:new Gfx.Mesh(g[i]);
+        loadBakedGun();
         maskTex=Gfx.maskTexture(level.lightMask,level.W,level.H);
         decalStream=new Gfx.Stream(3,2,1);partStream=new Gfx.Stream(3,2,4);
         for(int i=0;i<Tex.COUNT;i++)tex[i]=null;
@@ -42,6 +43,28 @@ final class Game implements GLSurfaceView.Renderer {
         last=System.nanoTime();
     }
     @Override public void onSurfaceChanged(GL10 unused,int w,int h){W=Math.max(1,w);H=Math.max(1,h);GLES30.glViewport(0,0,W,H);}
+
+    // ------------------------------------------------------------------ the baked double barrel
+    private Gfx.Mesh[] gunMesh=new Gfx.Mesh[2];private int[] gunTex;private float gunPom;
+    /** Loads the low poly gun (gun.bin) and its baked maps from the assets. */
+    private void loadBakedGun(){
+        try(java.io.InputStream in=ctx.getAssets().open("gun.bin")){
+            byte[] all=readAll(in);java.nio.ByteBuffer b=java.nio.ByteBuffer.wrap(all).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            if(b.getInt()!=0x4e554753)throw new RuntimeException("gun.bin");gunPom=b.getFloat();int groups=b.getInt();
+            for(int gI=0;gI<groups&&gI<2;gI++){int n=b.getInt();float[] v=new float[n*11];for(int i=0;i<v.length;i++)v[i]=b.getFloat();gunMesh[gI]=new Gfx.Mesh(v);}
+            gunTex=new int[]{asset("gun_a.png",true),asset("gun_b.png",false),asset("gun_c.png",false)};
+        }catch(Exception e){throw new RuntimeException("baked gun: "+e);}
+    }
+    private int asset(String name,boolean srgb)throws java.io.IOException{
+        android.graphics.BitmapFactory.Options o=new android.graphics.BitmapFactory.Options();o.inPremultiplied=false;o.inScaled=false;o.inPreferredConfig=android.graphics.Bitmap.Config.ARGB_8888;
+        android.graphics.Bitmap bm;try(java.io.InputStream in=ctx.getAssets().open(name)){bm=android.graphics.BitmapFactory.decodeStream(in,null,o);}
+        int w=bm.getWidth(),h=bm.getHeight();int[] px=new int[w*h];bm.getPixels(px,0,w,0,0,w,h);bm.recycle();
+        if(!name.equals("gun_c.png")&&!bm.hasAlpha()){}
+        return Gfx.texture(px,w,h,srgb,false);
+    }
+    private static byte[] readAll(java.io.InputStream in)throws java.io.IOException{java.io.ByteArrayOutputStream o=new java.io.ByteArrayOutputStream();byte[] b=new byte[65536];int n;while((n=in.read(b))>0)o.write(b,0,n);return o.toByteArray();}
+    private void bindGun(){for(int k=0;k<3;k++){GLES30.glActiveTexture(GLES30.GL_TEXTURE0+k);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,gunTex[k]);}
+        GLES30.glUniform1f(u(prog,"uPom"),gunPom);GLES30.glUniform1f(u(prog,"uEmit"),0);}
 
     private int u(int p,String n){String k=p+n;Integer v=uni.get(k);if(v==null){v=GLES30.glGetUniformLocation(p,n);uni.put(k,v);}return v;}
 
@@ -78,20 +101,23 @@ final class Game implements GLSurfaceView.Renderer {
         float[] eye={pl.x,pl.y,pl.eyeZ()};
         float[] cam=camMatrix(eye,f,right,up);
         if((ev&Gun.EV_FIRE)!=0){
-            sfx.play(Sfx.BLAST,1f);flash=.07f;pl.kickVel+=3.2f;
-            for(int k=0;k<10;k++){   // ten pellets in a cone
-                float a=fx.rng.nextFloat()*6.2832f,rr=(float)Math.sqrt(fx.rng.nextFloat())*.06f;
+            sfx.play(Sfx.BLAST,1f);flash=.07f;pl.kickVel+=4.2f;
+            for(int k=0;k<9;k++){   // nine buckshot pellets in a cone
+                float a=fx.rng.nextFloat()*6.2832f,rr=(float)Math.sqrt(fx.rng.nextFloat())*.05f;
                 float[] d=Model.norm(new float[]{f[0]+right[0]*(float)Math.cos(a)*rr+up[0]*(float)Math.sin(a)*rr,f[1]+right[1]*(float)Math.cos(a)*rr+up[1]*(float)Math.sin(a)*rr,f[2]+right[2]*(float)Math.cos(a)*rr+up[2]*(float)Math.sin(a)*rr});
                 float[] hit=level.ray(eye[0],eye[1],eye[2],d[0],d[1],d[2],70);
                 if(hit!=null){fx.impact(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5],(int)hit[7]);if((int)hit[7]!=Tex.LAVA&&(int)hit[7]!=Tex.LIGHT)fx.hole(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5]);}}
         }
-        if((ev&Gun.EV_PUMP_BACK)!=0)sfx.play(Sfx.PUMP_BACK,.8f);
-        if((ev&Gun.EV_PUMP_FWD)!=0)sfx.play(Sfx.PUMP_FWD,.8f);
+        if((ev&Gun.EV_OPEN)!=0)sfx.play(Sfx.PUMP_BACK,.8f,.8f);
+        if((ev&Gun.EV_CLOSE)!=0)sfx.play(Sfx.PUMP_FWD,.9f,.75f);
         if((ev&Gun.EV_SHELL_IN)!=0)sfx.play(Sfx.SHELL_IN,.7f);
         if((ev&Gun.EV_DRY)!=0)sfx.play(Sfx.DRY,.8f);
         gun.pose(pl.bobPhase,pl.bobAmt,look[0],look[1],time,dt);
         if((ev&Gun.EV_FIRE)!=0){float[] mz=M.pt(cam,gun.muzzleCam);fx.muzzle(mz[0],mz[1],mz[2],f[0],f[1],f[2]);}
-        if((ev&Gun.EV_EJECT)!=0){float[] p=M.pt(cam,gun.portCam);fx.eject(p[0],p[1],p[2],right,up,f);}
+        if((ev&Gun.EV_EJECT)!=0){   // the extractors throw the fired cases up and back over the shoulder
+            float[] back=Model.norm(new float[]{-f[0]*.85f+right[0]*.35f,-f[1]*.85f+right[1]*.35f,-f[2]*.85f+right[2]*.35f});
+            for(int b=0;b<2;b++)if(gun.spent[b]){float[] p=M.pt(cam,gun.chamberCam[b]);fx.eject(p[0],p[1],p[2],back,up,right);}
+            gun.clearSpent();}
         // barrel smoke for a moment after each shot
         if(gun.state==Gun.FIRE&&gun.t<1.2f&&fx.rng.nextFloat()<.35f){float[] mz=M.pt(cam,gun.muzzleCam);fx.spawn(Fx.SMOKE,mz[0],mz[1],mz[2],fx.rnd(-.05f,.05f),fx.rnd(-.05f,.05f),fx.rnd(.15f,.35f),fx.rnd(.8f,1.4f),.025f,.6f,0,1f,.5f,.48f,.46f,.25f);}
         // embers rising from the lava
@@ -100,7 +126,7 @@ final class Game implements GLSurfaceView.Renderer {
         fx.update(dt,level);
         if(fx.updateShells(dt,level)>0)sfx.play(Sfx.TINK,.5f,.9f+fx.rng.nextFloat()*.3f);
         flash=Math.max(0,flash-dt);hint=Math.max(0,hint-dt);
-        ammo=gun.ammo;reserve=gun.reserve;health=pl.health;hurt=pl.hurtFlash;reloading=gun.reloading();spread=gun.recoilNow;
+        ammo=gun.ammo();reserve=gun.reserve;health=pl.health;hurt=pl.hurtFlash;reloading=gun.reloading();spread=gun.recoilNow;
     }
     /** Camera-space (x forward, y left, z up) to world, with the view roll applied to the up vector. */
     private float[] camMatrix(float[] eye,float[] f,float[] right,float[] up){
@@ -145,8 +171,11 @@ final class Game implements GLSurfaceView.Renderer {
         drawParticles(vp,right,upR);
         // first-person shotgun and hands on top
         GLES30.glClear(GLES30.GL_DEPTH_BUFFER_BIT);GLES30.glUseProgram(prog);GLES30.glUniformMatrix4fv(u(prog,"uVP"),1,false,vpGun,0);
-        for(int p=0;p<Gun.PARTS;p++){if(!gun.visible[p])continue;float[] Mx=M.mul(cam,gun.mat[p]);model(Mx);bindMat(Gun.PART_MAT[p],false);parts[p].draw();
+        for(int p=0;p<Gun.PARTS;p++){if(!gun.visible[p])continue;float[] Mx=M.mul(cam,gun.mat[p]);model(Mx);
+            if(Gun.PART_MAT[p]<0){bindGun();gunMesh[p==Gun.P_ACTION?0:1].draw();continue;}
+            bindMat(Gun.PART_MAT[p],false);parts[p].draw();
             if(p==Gun.P_SLEEVE||p==Gun.P_CUFF){model(M.mul(cam,gun.leftArm));parts[p].draw();}}
+        for(int k=0;k<gun.shellCount;k++){model(M.mul(cam,gun.shellMats[k]));bindMat(Tex.SHELL,false);parts[Gun.P_HULL].draw();bindMat(Tex.BRASS,false);parts[Gun.P_BASE].draw();}
         GLES30.glBindVertexArray(0);
     }
     private void model(float[] m){GLES30.glUniformMatrix4fv(u(prog,"uModel"),1,false,m,0);GLES30.glUniformMatrix3fv(u(prog,"uNrmM"),1,false,M.nrm(m),0);}

@@ -12,9 +12,9 @@ import javax.microedition.khronos.opengles.GL10;
 /** The game: update loop, the third-person camera, and OpenGL ES 3 rendering of the level, effects, the warden and her shotgun. */
 final class Game implements GLSurfaceView.Renderer {
     private final Context ctx;Hud hud;Sfx sfx;
-    final Level level=new Level();final Player pl=new Player();final Gun gun=new Gun();final Fx fx=new Fx();final Hero hero=new Hero();
+    final Level level=new Level();final Player pl=new Player();final Gun gun=new Gun();final Fx fx=new Fx();final Hero hero=new Hero();final Ragdoll rag=new Ragdoll();DroppedGun dropped;
     // HUD state (read by the UI thread)
-    volatile String loading="Forging materials…";volatile float progress;volatile int ammo,reserve,fps;volatile float health=100,hurt,spread,hint=6;volatile boolean reloading;
+    volatile String loading="Forging materials…";volatile float progress;volatile int ammo,reserve,fps;volatile float health=100,hurt,spread,hint=6;volatile boolean reloading,hasGun=true;
 
     Game(Context c){ctx=c;pl.spawn(level);hero.bodyYaw=pl.yaw;}
 
@@ -83,7 +83,7 @@ final class Game implements GLSurfaceView.Renderer {
         GLES30.glUniform1f(u(prog,"uPom"),heroPom*.35f);GLES30.glUniform1f(u(prog,"uEmit"),4f);
         for(int p=0;p<heroParts.length&&p<Hero.PARTS;p++){if(heroParts[p]==null||hero.mat[p]==null)continue;model(hero.mat[p]);heroParts[p].draw();}
         float[] E=hero.eyeFrame;
-        bindGun();model(M.mul(E,gun.mat[Gun.P_ACTION]));gunMesh[0].draw();model(M.mul(E,gun.mat[Gun.P_BARRELS]));gunMesh[1].draw();
+        if(hero.hasGun||dropped!=null){bindGun();model(M.mul(E,gun.mat[Gun.P_ACTION]));gunMesh[0].draw();model(M.mul(E,gun.mat[Gun.P_BARRELS]));gunMesh[1].draw();}
         for(int k=0;k<gun.shellCount;k++){model(M.mul(E,gun.shellMats[k]));bindMat(Tex.SHELL,false);parts[Gun.P_HULL].draw();bindMat(Tex.BRASS,false);parts[Gun.P_BASE].draw();}
         for(int k=0;k<hero.caddyCount;k++){model(hero.caddyMats[k]);bindMat(Tex.SHELL,false);parts[Gun.P_HULL].draw();bindMat(Tex.BRASS,false);parts[Gun.P_BASE].draw();}
         // the chainsaw: body, then the chain loop with its texture running along the bar
@@ -129,13 +129,31 @@ final class Game implements GLSurfaceView.Renderer {
     private int lastStep;private boolean wasOnGround=true;
     private void update(float dt){
         Hud.Input in=hud.in;float[] look=in.takeLook();boolean jump=in.takeJump()||(in.jumpHeld&&pl.onGround);
-        pl.update(dt,level,in.moveX,in.moveY,look[0],look[1],jump,.0055f);
-        if(pl.justJumped)sfx.play(Sfx.JUMP,.5f);
-        if(pl.justLanded)sfx.play(Sfx.LAND,Math.min(1,pl.landSpeed/12));
-        if(pl.hurtFlash>.99f&&(int)(time*4)%2==0)sfx.play(Sfx.SIZZLE,.4f);
-        gun.update(dt,in.fire,in.takeReload());
-        int ev=gun.events;
-        hero.update(dt,time,pl,pl.yaw,pl.viewPitch(),in.fire,in.saw,gun);
+        boolean wantRag=in.takeRagdoll();
+        int ev=0;
+        if(!ragOn){
+            pl.update(dt,level,in.moveX,in.moveY,look[0],look[1],jump,.0055f);
+            if(pl.justJumped)sfx.play(Sfx.JUMP,.5f);
+            if(pl.justLanded)sfx.play(Sfx.LAND,Math.min(1,pl.landSpeed/12));
+            if(pl.hurtFlash>.99f&&(int)(time*4)%2==0)sfx.play(Sfx.SIZZLE,.4f);
+            boolean rl=in.takeReload();
+            if(hero.hasGun){gun.update(dt,in.fire,rl);ev=gun.events;}
+            hero.update(dt,time,pl,level,pl.yaw,pl.viewPitch(),in.fire,in.saw,gun);
+            if(!hero.hasGun&&dropped!=null)gun.poseWorld(dropped.matrix());
+            blendFromGetUp(dt);
+            // walking into walls: a recoil, or a hard run into one knocks her down
+            if(pl.bumpSpeed>0){sfx.play(Sfx.LAND,Math.min(1,pl.bumpSpeed/5)*.7f,1.2f);
+                if(pl.bumpSpeed>3.7f&&hero.run>.7f)startRagdoll(new float[]{pl.bumpNx*2.4f,pl.bumpNy*2.4f,1.2f});
+                else hero.bump(pl.bumpNx,pl.bumpNy,pl.bumpSpeed);}
+            if(pl.justLanded&&pl.landSpeed>13.5f)startRagdoll(new float[]{pl.vx*.3f,pl.vy*.3f,0});
+            if(wantRag&&!ragOn){float c=(float)Math.cos(hero.bodyYaw),s=(float)Math.sin(hero.bodyYaw);float side=(fx.rng.nextFloat()-.5f)*1.6f;
+                startRagdoll(new float[]{c*2.2f-s*side,s*2.2f+c*side,1.6f});}
+            // walking over the dropped shotgun picks it up
+            if(!hero.hasGun&&dropped!=null&&dropped.resting&&!hero.picking()){float dx=dropped.c[0]-pl.x,dy=dropped.c[1]-pl.y;
+                if(dx*dx+dy*dy<.55f&&Math.abs(dropped.c[2]-pl.z)<.7f)hero.pickUp(dropped.c);}
+            if(!hero.hasGun&&dropped!=null&&hero.pickGrabbed()){hero.hasGun=true;dropped=null;gun.clearSpent();sfx.play(Sfx.PUMP_FWD,.8f,1.1f);}
+        }else updateRagdoll(dt);
+        if(dropped!=null)dropped.update(dt,level);
         updateSaw(dt);
         if(hero.steps>0&&pl.onGround)sfx.play(Sfx.STEP,.3f+.15f*hero.run,.9f+fx.rng.nextFloat()*.2f);
         updateCamera(dt);
@@ -172,16 +190,47 @@ final class Game implements GLSurfaceView.Renderer {
         fx.update(dt,level);
         if(fx.updateShells(dt,level)>0)sfx.play(Sfx.TINK,.5f,.9f+fx.rng.nextFloat()*.3f);
         flash=Math.max(0,flash-dt);hint=Math.max(0,hint-dt);
-        ammo=gun.ammo();reserve=gun.reserve;health=pl.health;hurt=pl.hurtFlash;reloading=gun.reloading();spread=gun.recoilNow;
+        hasGun=hero.hasGun;ammo=hero.hasGun?gun.ammo():0;reserve=gun.reserve;health=pl.health;hurt=pl.hurtFlash;reloading=gun.reloading();spread=gun.recoilNow;
     }
+    // ------------------------------------------------------------------ ragdoll, get-up, dropped shotgun
+    private boolean ragOn;private float[][] getUpEnd;private float blendT=9;
+    private void startRagdoll(float[] push){
+        if(ragOn)return;ragOn=true;
+        rag.start(hero.joints,hero.prevJoints,1/60f,new float[]{pl.vx*0+push[0],push[1],push[2]});
+        if(hero.hasGun){   // she lets go of the shotgun
+            float[] G=gun.mat[Gun.P_ACTION];float[] hv=Model.sub(hero.joints[Hero.J_HAND_L],hero.prevJoints[Hero.J_HAND_L]);
+            dropped=new DroppedGun(G,new float[]{hv[0]*60+push[0]*.6f,hv[1]*60+push[1]*.6f,hv[2]*60+1.5f},fx.rng);hero.hasGun=false;
+            if(gun.reloading()){gun.state=Gun.IDLE;gun.t=0;}}
+        sfx.play(Sfx.JUMP,.7f,.8f);
+    }
+    private void updateRagdoll(float dt){
+        rag.step(dt,level,time);
+        float[][] J=rag.state==Ragdoll.FALL||rag.state==Ragdoll.DOWN?rag.p:rag.getUpPose(dt,level);
+        if(J==null)J=rag.p;
+        hero.fromJoints(J,dt);
+        if(rag.impact>3.5f&&time-lastThud>.12f){lastThud=time;sfx.play(Sfx.LAND,Math.min(1,rag.impact/9),.85f+fx.rng.nextFloat()*.2f);}
+        float[] pel=J[Hero.J_PELVIS];pl.x=pel[0];pl.y=pel[1];pl.z=level.floorUnder(pl.x,pl.y,.1f);pl.vx=pl.vy=pl.vz=0;
+        if(dropped!=null)gun.poseWorld(dropped.matrix());
+        if(rag.state==Ragdoll.DONE){
+            ragOn=false;pl.x=rag.standAt[0];pl.y=rag.standAt[1];pl.z=level.floorUnder(pl.x,pl.y,Player.RADIUS);pl.onGround=true;
+            hero.resetFacing(rag.standYaw);getUpEnd=J;blendT=0;}
+    }
+    private float lastThud;
+    /** Blends from the end of a get-up into locomotion. */
+    private void blendFromGetUp(float dt){
+        if(blendT>=.4f||getUpEnd==null)return;blendT+=dt;float b=Hero.smooth(0,.4f,blendT);
+        float[][] L=hero.currentJoints();float[][] J=new float[Hero.JOINTS][];for(int i=0;i<Hero.JOINTS;i++)J[i]=Hero.lerpW(getUpEnd[i],L[i],b);
+        hero.fromJoints(J,dt);
+    }
+
     // ------------------------------------------------------------------ the chainsaw running and cutting
     private float sawRev,cutTimer,lastGrind;
     private void updateSaw(float dt){
-        float target=hero.saw>.5f?1:.12f;sawRev+=(target-sawRev)*Math.min(1,dt*(target>sawRev?6:2.5f));
+        float target=hero.saw>.5f||hero.fidgetRev?1:.12f;sawRev+=(target-sawRev)*Math.min(1,dt*(target>sawRev?6:2.5f));
         chainScroll+=dt*(.2f+sawRev*2.6f);chainScroll-=(float)Math.floor(chainScroll);
         sfx.engine(.18f+sawRev*.55f,.55f+sawRev*1.25f);
         // the bar's leading edge biting into walls: sparks, scars and a grind
-        if(hero.saw>.6f){float[] a=M.pt(hero.sawMat,new float[]{.47f,0,0}),b=M.pt(hero.sawMat,new float[]{.97f,0,0});float[] d=Model.sub(b,a);float l=Model.len(d);d=Model.mul(d,1/l);
+        if(hero.saw>.6f&&!ragOn){float[] a=M.pt(hero.sawMat,new float[]{.47f,0,0}),b=M.pt(hero.sawMat,new float[]{.97f,0,0});float[] d=Model.sub(b,a);float l=Model.len(d);d=Model.mul(d,1/l);
             float[] hit=level.ray(a[0],a[1],a[2],d[0],d[1],d[2],l);
             if(hit!=null){cutTimer-=dt;if(cutTimer<=0){cutTimer=.06f;fx.impact(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5],(int)hit[7]);if(fx.rng.nextFloat()<.3f)fx.hole(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5]);}
                 if(time-lastGrind>.18f){lastGrind=time;sfx.play(Sfx.GRIND,.7f,.9f+fx.rng.nextFloat()*.2f);}pl.kickVel+=dt*3;}}
@@ -201,7 +250,7 @@ final class Game implements GLSurfaceView.Renderer {
     private void updateCamera(float dt){
         float p=pl.viewPitch(),cy=(float)Math.cos(pl.yaw),sy=(float)Math.sin(pl.yaw),cp=(float)Math.cos(p);
         camF=new float[]{cy*cp,sy*cp,(float)Math.sin(p)};camR=Model.norm(Model.cross(camF,new float[]{0,0,1}));camU=Model.cross(camR,camF);
-        float headZ=pl.z+1.6f-.06f*hero.run;
+        float headZ=ragOn?Math.max(pl.z+.55f,hero.joints[Hero.J_PELVIS][2]+.65f):pl.z+1.6f-.06f*hero.run;
         camPZ=Float.isNaN(camPZ)?headZ:camPZ+(headZ-camPZ)*Math.min(1,dt*(pl.onGround?14:6));
         float[] head={pl.x,pl.y,camPZ};float[] rh={sy,-cy,0};
         float side=Hero.mix(.42f,.5f,hero.aim);

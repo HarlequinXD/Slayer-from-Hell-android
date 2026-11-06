@@ -7,11 +7,13 @@ package com.harlequin.slayer;
  */
 final class Player {
     static final float RADIUS=.3f,HEIGHT=1.75f,EYE=1.62f;
-    static final float MAX_SPEED=4.3f,WALK_SPEED=1.45f,ACCEL=10f,AIR_ACCEL=8f,AIR_CAP=.9f,FRICTION=7f,STOP_SPEED=1.5f,GRAVITY=18f,JUMP=5.4f;
+    static final float MAX_SPEED=4.3f,WALK_SPEED=1.45f,ACCEL=10f,AIR_ACCEL=8f,AIR_CAP=.9f,FRICTION=7f,STOP_SPEED=.5f,GRAVITY=18f,JUMP=5.4f;
     float x,y,z,vx,vy,vz,yaw,pitch;boolean onGround;
     float health=100;float hurtFlash;
     float bobPhase,bobAmt,landDip,landVel,stepSmooth,kick,kickVel,roll;
     int stepCount;boolean justLanded,justJumped,stepped;float landSpeed;
+    /** Wall contact: a hit this frame (speed into the wall, the wall's normal pointing back at her), and whether she is pushing against one. */
+    float bumpSpeed,bumpNx,bumpNy,wallNx,wallNy;boolean pushingWall;private float bumpCool;
     private int lastStep;
 
     void spawn(Level L){x=L.spawnX;y=L.spawnY;z=L.floorUnder(x,y,RADIUS);vx=vy=vz=0;yaw=L.spawnAngle;pitch=0;health=100;onGround=true;}
@@ -32,8 +34,16 @@ final class Player {
         }else accelerate(wx,wy,Math.min(wishSpeed,AIR_CAP),AIR_ACCEL,dt);
         // horizontal movement, one axis at a time so we slide along walls
         float before=z;
-        float nx=x+vx*dt;if(!L.blocked(nx,y,z,RADIUS,HEIGHT))x=nx;else vx=0;
-        float ny=y+vy*dt;if(!L.blocked(x,ny,z,RADIUS,HEIGHT))y=ny;else vy=0;
+        float hitX=0,hitY=0;bumpSpeed=0;bumpCool-=dt;
+        float nx=x+vx*dt;if(!L.blocked(nx,y,z,RADIUS,HEIGHT))x=nx;else{hitX=vx;vx=0;}
+        float ny=y+vy*dt;if(!L.blocked(x,ny,z,RADIUS,HEIGHT))y=ny;else{hitY=vy;vy=0;}
+        if(hitX!=0||hitY!=0){float sp=(float)Math.hypot(hitX,hitY);float bx=-hitX/sp*(Math.abs(hitX)/sp),by=-hitY/sp*(Math.abs(hitY)/sp);float bl=(float)Math.hypot(bx,by);
+            if(sp>1.3f&&bumpCool<=0){bumpSpeed=sp;bumpNx=bx/bl;bumpNy=by/bl;bumpCool=.6f;}}
+        // pushing on a wall (stick held into it): probe a little way along the wish direction
+        pushingWall=false;
+        if(wl>.3f&&onGround){float px=x+wx*(RADIUS*0+.08f),py=y+wy*.08f;
+            boolean bxw=L.blocked(px,y,z,RADIUS,HEIGHT),byw=L.blocked(x,py,z,RADIUS,HEIGHT);
+            if(bxw||byw){pushingWall=true;wallNx=bxw?-Math.signum(wx):0;wallNy=byw?-Math.signum(wy):0;float l=(float)Math.hypot(wallNx,wallNy);if(l>0){wallNx/=l;wallNy/=l;}}}
         float fl=L.floorUnder(x,y,RADIUS);
         if(onGround){
             if(fl>z){stepSmooth-=fl-z;z=fl;stepped=true;}                       // step up

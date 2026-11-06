@@ -32,7 +32,7 @@ final class Game implements GLSurfaceView.Renderer {
         prog=Gfx.program(Shaders.VS_PBR,Shaders.FS_PBR);progDecal=Gfx.program(Shaders.VS_DECAL,Shaders.FS_DECAL);progPart=Gfx.program(Shaders.VS_PART,Shaders.FS_PART);uni.clear();
         java.util.ArrayList<float[]>[] geo=level.build();levelMesh=new Gfx.Mesh[Tex.COUNT];for(int i=0;i<Tex.COUNT;i++)levelMesh[i]=new Gfx.Mesh(geo[i].get(0));
         float[][] g=Gun.build();parts=new Gfx.Mesh[g.length];for(int i=0;i<g.length;i++)parts[i]=g[i]==null?null:new Gfx.Mesh(g[i]);
-        loadBakedGun();
+        loadBakedGun();loadHero();
         maskTex=Gfx.maskTexture(level.lightMask,level.W,level.H);
         decalStream=new Gfx.Stream(3,2,1);partStream=new Gfx.Stream(3,2,4);
         for(int i=0;i<Tex.COUNT;i++)tex[i]=null;
@@ -54,6 +54,26 @@ final class Game implements GLSurfaceView.Renderer {
             for(int gI=0;gI<groups&&gI<2;gI++){int n=b.getInt();float[] v=new float[n*11];for(int i=0;i<v.length;i++)v[i]=b.getFloat();gunMesh[gI]=new Gfx.Mesh(v);}
             gunTex=new int[]{asset("gun_a.png",true),asset("gun_b.png",false),asset("gun_c.png",false)};
         }catch(Exception e){throw new RuntimeException("baked gun: "+e);}
+    }
+    // ------------------------------------------------------------------ the warden (baked showcase figure in the start room)
+    private Gfx.Mesh heroMesh;private int[] heroTex;private float heroPom;
+    private void loadHero(){
+        try(java.io.InputStream in=ctx.getAssets().open("hero.bin")){
+            java.nio.ByteBuffer b=java.nio.ByteBuffer.wrap(readAll(in)).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            if(b.getInt()!=0x4e554753)throw new RuntimeException("hero.bin");heroPom=b.getFloat();b.getInt();
+            int n=b.getInt();float[] v=new float[n*11];for(int i=0;i<v.length;i++)v[i]=b.getFloat();heroMesh=new Gfx.Mesh(v);
+            heroTex=new int[]{asset("hero_a.png",true),asset("hero_b.png",false),asset("hero_c.png",false)};
+        }catch(Exception e){throw new RuntimeException("baked hero: "+e);}
+    }
+    /** She stands a few metres ahead of the spawn point, turned to face it, with her visor and blade glowing. */
+    private void drawHero(){
+        float hx=level.spawnX+4.6f,hy=level.spawnY+.9f,hz=level.floorUnder(hx,hy,.3f);
+        float yaw=(float)Math.atan2(level.spawnY-hy,level.spawnX-hx);
+        float breathe=1+.006f*(float)Math.sin(time*1.6f);
+        model(M.mul(M.tr(hx,hy,hz),M.mul(M.rz(yaw),M.scale(1,1,breathe))));
+        for(int k=0;k<3;k++){GLES30.glActiveTexture(GLES30.GL_TEXTURE0+k);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,heroTex[k]);}
+        GLES30.glUniform1f(u(prog,"uPom"),heroPom*.35f);GLES30.glUniform1f(u(prog,"uEmit"),4f);GLES30.glUniform1f(u(prog,"uPulse"),1);
+        heroMesh.draw();GLES30.glUniform1f(u(prog,"uPulse"),0);
     }
     private int asset(String name,boolean srgb)throws java.io.IOException{
         android.graphics.BitmapFactory.Options o=new android.graphics.BitmapFactory.Options();o.inPremultiplied=false;o.inScaled=false;o.inPreferredConfig=android.graphics.Bitmap.Config.ARGB_8888;
@@ -164,6 +184,7 @@ final class Game implements GLSurfaceView.Renderer {
             GLES30.glUniform2f(u(prog,"uUvScroll"),m==Tex.LAVA?time*.012f:0,m==Tex.LAVA?time*.007f:0);GLES30.glUniform1f(u(prog,"uPulse"),m==Tex.LAVA?1:0);
             levelMesh[m].draw();}
         GLES30.glUniform2f(u(prog,"uUvScroll"),0,0);GLES30.glUniform1f(u(prog,"uPulse"),0);
+        drawHero();
         // spent shells lying around
         for(Fx.Shell s:fx.shells){float[] Mx=M.mul(M.tr(s.x,s.y,s.z),M.mul(M.rz(s.yaw),M.mul(M.ry(s.pitch),M.rx(s.roll))));model(Mx);
             bindMat(Tex.SHELL,false);parts[Gun.P_HULL].draw();bindMat(Tex.BRASS,false);parts[Gun.P_BASE].draw();}

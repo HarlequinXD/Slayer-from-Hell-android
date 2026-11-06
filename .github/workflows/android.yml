@@ -53,6 +53,9 @@ jobs:
           yes | sdkmanager --licenses || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Character simulation tests
+        run: gradle testDebugUnitTest --stacktrace
+
       - name: Build Debug APK
         run: gradle assembleDebug --stacktrace
 

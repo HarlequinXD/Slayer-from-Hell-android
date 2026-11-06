@@ -26,7 +26,7 @@ import static com.harlequin.slayer.Model.v;
 final class Hero {
     // part ids: identical to tools/bake/HeroBaker
     static final int P_TORSO=0,P_HEAD=1,P_BRAID=2,P_GLAIVE_SHAFT=3,P_GLAIVE_HEAD=4,P_FIRST_SIDE=5;
-    static final int S_PAULDRON=0,S_UPPER=1,S_FORE=2,S_HAND=3,S_THIGH=4,S_SHIN=5,S_FOOT=6,PER_SIDE=7,PARTS=P_FIRST_SIDE+2*PER_SIDE;
+    static final int S_PAULDRON=0,S_UPPER=1,S_FORE=2,S_HAND=3,S_THIGH=4,S_SHIN=5,S_FOOT=6,PER_SIDE=7,P_PELVIS=P_FIRST_SIDE+2*PER_SIDE,PARTS=P_PELVIS+1;
     static int sidePart(int s,int k){return P_FIRST_SIDE+(s>0?0:PER_SIDE)+k;}
     // bind-pose landmarks (s = +1 left, -1 right)
     static float[] hip(int s){return v(0,s*.095f,.95f);}
@@ -37,7 +37,7 @@ final class Hero {
     static float[] elbow(int s){return s<0?v(-.03f,-.27f,1.19f):v(-.04f,.265f,1.18f);}
     static float[] wrist(int s){return s<0?v(.06f,-.3f,.985f):v(-.01f,.29f,.95f);}
     static float[] handCentre(int s){float[] e=elbow(s),w=wrist(s);return Model.add(w,Model.norm(Model.sub(w,e)),.055f);}
-    static final float[] WAIST=v(0,0,1.0f),NECK=v(0,0,1.5f),EYE=v(.06f,0,1.676f),BRAID_ROOT=v(-.115f,0,1.63f),PELVIS=v(0,0,.95f),HEAD=v(.01f,0,1.675f);
+    static final float[] WAIST=v(0,0,1.12f),NECK=v(0,0,1.5f),EYE=v(.06f,0,1.676f),BRAID_ROOT=v(-.115f,0,1.63f),PELVIS=v(0,0,.95f),HEAD=v(.01f,0,1.675f);
 
     // ---------------------------------------------------------------- joints (shared with the ragdoll and the get-up)
     static final int J_PELVIS=0,J_HIP_L=1,J_HIP_R=2,J_NECK=3,J_SH_L=4,J_SH_R=5,J_HEAD=6,J_KNEE_L=7,J_KNEE_R=8,J_ANK_L=9,J_ANK_R=10,
@@ -187,7 +187,9 @@ final class Hero {
             // the floor under this foot: planted feet keep theirs; swinging feet ease to the next one
             float fl=level.floorUnder(tw[0],tw[1],.06f);if(fl<-50)fl=pl.z;
             if(Float.isNaN(footFloor[si]))footFloor[si]=fl;
-            if(!swing&&gaitAmp>.3f&&air<.5f)footFloor[si]=approach(footFloor[si],fl,30,dt);else footFloor[si]=approach(footFloor[si],fl,air>.5f?4:16,dt);
+            if(fl>footFloor[si])footFloor[si]=swing||air>.5f?approach(footFloor[si],fl,30,dt):fl;   // never through a step: rise at once when planted, quickly when swinging
+            if(fl>footFloor[si]+.03f&&swing)footFloor[si]=fl-.03f;
+            else if(fl<footFloor[si])footFloor[si]=approach(footFloor[si],fl,air>.5f?4:16,dt);   // ease down onto lower steps
             float floorRel=footFloor[si]-root[2];
             if(swing&&fl>footFloor[si]+.02f)lift+=Math.min(.3f,fl-footFloor[si])*1.1f;     // lift the swinging foot over a step up
             tw[2]=root[2]+an[2]+lift+(air>.5f?0:floorRel)*(1-air);
@@ -222,7 +224,7 @@ final class Hero {
         float[] Tr=M.mul(M.rz(torsoTwist),M.mul(M.ry(lean*dx-aimPitch*.35f-kick*.05f+bl*(-bnx)*0-(bl*bnx)-wl*0),M.rx(-lean*dy*.6f+bank*.6f+bl*bny+fRoll*.07f)));
         Tr=M.mul(M.rz(.0f),Tr);
         float[] T=M.mul(P,pivot(WAIST,Tr));
-        mat[P_TORSO]=T;
+        mat[P_TORSO]=T;mat[P_PELVIS]=P;
         mat[sidePart(1,S_PAULDRON)]=T;mat[sidePart(-1,S_PAULDRON)]=T;
         float reload=hasGun&&gun.reloading()?1:0;
         float eyeYaw=bodyYaw+aim*wrap(camYaw-bodyYaw)+fLook-.45f*fSaw;
@@ -323,8 +325,8 @@ final class Hero {
         float[][] J=currentJoints();for(int j=0;j<JOINTS;j++)System.arraycopy(J[j],0,joints[j],0,3);
     }
     float[][] currentJoints(){
-        float[][] J=new float[JOINTS][];float[] T=mat[P_TORSO];
-        J[J_PELVIS]=M.pt(T,PELVIS);J[J_HIP_L]=M.pt(T,hip(1));J[J_HIP_R]=M.pt(T,hip(-1));J[J_NECK]=M.pt(T,NECK);J[J_SH_L]=M.pt(T,shoulder(1));J[J_SH_R]=M.pt(T,shoulder(-1));
+        float[][] J=new float[JOINTS][];float[] T=mat[P_TORSO],Pm=mat[P_PELVIS];
+        J[J_PELVIS]=M.pt(Pm,PELVIS);J[J_HIP_L]=M.pt(Pm,hip(1));J[J_HIP_R]=M.pt(Pm,hip(-1));J[J_NECK]=M.pt(T,NECK);J[J_SH_L]=M.pt(T,shoulder(1));J[J_SH_R]=M.pt(T,shoulder(-1));
         J[J_HEAD]=M.pt(mat[P_HEAD],HEAD);
         for(int s=-1;s<=1;s+=2){int o=s>0?0:1;
             J[J_KNEE_L+o]=M.pt(mat[sidePart(s,S_THIGH)],knee(s));J[J_ANK_L+o]=M.pt(mat[sidePart(s,S_SHIN)],ankle(s));J[J_TOE_L+o]=M.pt(mat[sidePart(s,S_FOOT)],toe(s));
@@ -338,7 +340,7 @@ final class Hero {
         float[] left=Model.add(Model.sub(J[J_HIP_L],J[J_HIP_R]),Model.sub(J[J_SH_L],J[J_SH_R]),1);left=Model.norm(Model.sub(left,Model.mul(up,Model.dot(left,up))));
         float[] fwd=Model.cross(left,up);
         float[] T=M.mul(M.basis(J[J_PELVIS],fwd,left,up),M.tr(-PELVIS[0],-PELVIS[1],-PELVIS[2]));
-        mat[P_TORSO]=T;mat[sidePart(1,S_PAULDRON)]=T;mat[sidePart(-1,S_PAULDRON)]=T;
+        mat[P_TORSO]=T;mat[P_PELVIS]=T;mat[sidePart(1,S_PAULDRON)]=T;mat[sidePart(-1,S_PAULDRON)]=T;
         float[] hu=Model.norm(Model.sub(J[J_HEAD],J[J_NECK]));float[] hf=Model.norm(Model.sub(fwd,Model.mul(hu,Model.dot(fwd,hu))));float[] hl=Model.cross(hu,hf);
         float[] hb=Model.norm(Model.sub(HEAD,NECK));   // bind neck->head axis leans a touch forward
         float[] H=M.mul(M.basis(J[J_NECK],hf,hl,hu),M.mul(rotTo(hb,v(0,0,1)),M.tr(-NECK[0],-NECK[1],-NECK[2])));

@@ -77,7 +77,7 @@ final class Gfx {
 
     /** A dynamic vertex stream (particles, decals) with a given attribute layout. */
     static final class Stream {
-        final int vao,vbo,stride;final int[] sizes;FloatBuffer buf;int cap;
+        final int vao,vbo,stride;final int[] sizes;FloatBuffer buf;int cap;int mode=GLES30.GL_TRIANGLES;
         Stream(int... sizes){this.sizes=sizes;int s=0;for(int z:sizes)s+=z;stride=s;
             int[] a=new int[1];GLES30.glGenVertexArrays(1,a,0);vao=a[0];GLES30.glGenBuffers(1,a,0);vbo=a[0];}
         void draw(float[] v,int floats){
@@ -87,7 +87,7 @@ final class Gfx {
             GLES30.glBindVertexArray(vao);GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER,vbo);
             GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER,floats*4,buf,GLES30.GL_STREAM_DRAW);
             int off=0;for(int i=0;i<sizes.length;i++){GLES30.glEnableVertexAttribArray(i);GLES30.glVertexAttribPointer(i,sizes[i],GLES30.GL_FLOAT,false,stride*4,off*4);off+=sizes[i];}
-            GLES30.glDrawArrays(GLES30.GL_TRIANGLES,0,n);
+            GLES30.glDrawArrays(mode,0,n);
         }
     }
 }

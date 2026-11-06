@@ -96,6 +96,13 @@ final class Shaders {
         " if(scorch<0.01)discard;float k=mix(1.0,0.35,scorch)*mix(1.0,0.08,hole);\n"+
         " float f=1.0-exp(-length(uCam-vPos)*uFog.a);k=mix(k,1.0,f);fragColor=vec4(vec3(k),1.0);}\n";
 
+    /** Debug lines: position and colour per vertex, drawn on top. */
+    static final String VS_LINE=
+        "#version 300 es\nlayout(location=0) in vec3 aPos;layout(location=1) in vec4 aCol;uniform mat4 uVP;out vec4 vCol;\n"+
+        "void main(){vCol=aCol;gl_Position=uVP*vec4(aPos,1.0);}\n";
+    static final String FS_LINE=
+        "#version 300 es\nprecision mediump float;in vec4 vCol;out vec4 fragColor;\nvoid main(){fragColor=vCol;}\n";
+
     /** Particles: camera-facing quads, colour per vertex, a soft round or star-shaped sprite. */
     static final String VS_PART=
         "#version 300 es\nlayout(location=0) in vec3 aPos;layout(location=1) in vec2 aUv;layout(location=2) in vec4 aCol;\n"+

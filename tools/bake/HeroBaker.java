@@ -102,14 +102,14 @@ public class HeroBaker {
 
     static final int P_TORSO=0,P_HEAD=1,P_BRAID=2,P_GLAIVE_SHAFT=3,P_GLAIVE_HEAD=4,P_FIRST_SIDE=5;
     // per side: pauldron, upper arm, forearm, hand, thigh, shin, foot  (left = 5..11, right = 12..18)
-    static final int S_PAULDRON=0,S_UPPER=1,S_FORE=2,S_HAND=3,S_THIGH=4,S_SHIN=5,S_FOOT=6,PER_SIDE=7,PARTS=P_FIRST_SIDE+2*PER_SIDE;
+    static final int S_PAULDRON=0,S_UPPER=1,S_FORE=2,S_HAND=3,S_THIGH=4,S_SHIN=5,S_FOOT=6,PER_SIDE=7,P_PELVIS=P_FIRST_SIDE+2*PER_SIDE,PARTS=P_PELVIS+1;   // P_PELVIS: the lower torso, below the lumbar joint
     static int sidePart(int s,int k){return P_FIRST_SIDE+(s>0?0:PER_SIDE)+k;}
 
-    static float sdfAll(float x,float y,float z,int[] mat){float d=1e9f;int m=0;for(int p=0;p<PARTS;p++){float e=part(p,x,y,z,mat);if(e<d){d=e;m=mat[0];}}mat[0]=m;return d;}
+    static float sdfAll(float x,float y,float z,int[] mat){float d=1e9f;int m=0;for(int p=0;p<P_PELVIS;p++){float e=part(p,x,y,z,mat);if(e<d){d=e;m=mat[0];}}mat[0]=m;return d;}
     static float sdf(int g,float x,float y,float z,int[] mat){return part(g,x,y,z,mat);}
     static float part(int p,float x,float y,float z,int[] mat){
         switch(p){
-            case P_TORSO:return torso(x,y,z,mat);
+            case P_TORSO:case P_PELVIS:return torso(x,y,z,mat);
             case P_HEAD:return head(x,y,z,mat);
             case P_BRAID:return braid(x,y,z,mat);
             case P_GLAIVE_SHAFT:return shaft(x,y,z,mat);
@@ -426,7 +426,9 @@ public class HeroBaker {
 
     static void buildLow(){
         // torso: hips to collar, a vertical axis
-        piece(P_TORSO,line(v(0,0,.866f),v(0,0,1.49f),0,.07f,.15f,.23f,.31f,.37f,.45f,.53f,.62f,.7f,.79f,.87f,.95f,1),16,.36f,true,true);
+        // the torso in two pieces split at the lumbar joint (z = 1.12, under the abdomen plates) so the spine can bend
+        piece(P_PELVIS,line(v(0,0,.866f),v(0,0,1.125f),0,.2f,.37f,.55f,.72f,.86f,1),16,.36f,true,false);
+        piece(P_TORSO,line(v(0,0,1.105f),v(0,0,1.49f),0,.14f,.28f,.42f,.55f,.68f,.8f,.9f,1),16,.36f,false,true);
         // helmet and neck
         piece(P_HEAD,line(v(0,0,1.475f),v(0,0,1.805f),0,.13f,.23f,.33f,.43f,.53f,.63f,.73f,.83f,.92f,1),14,.3f,false,true);
         // braid: stations along its curve

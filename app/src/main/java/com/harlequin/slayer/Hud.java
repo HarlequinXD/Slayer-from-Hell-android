@@ -16,11 +16,7 @@ final class Hud extends View {
     /** Shared with the GL thread. */
     static final class Input {
         volatile float moveX,moveY;volatile boolean fire,jumpHeld,saw;
-        private float lookX,lookY;private boolean reload,jump,ragdoll,push;volatile boolean debug;
-        synchronized void pressPush(){push=true;}
-        synchronized boolean takePush(){boolean r=push;push=false;return r;}
-        synchronized void pressRagdoll(){ragdoll=true;}
-        synchronized boolean takeRagdoll(){boolean r=ragdoll;ragdoll=false;return r;}
+        private float lookX,lookY;private boolean reload,jump;
         synchronized void look(float dx,float dy){lookX+=dx;lookY+=dy;}
         synchronized float[] takeLook(){float[] r={lookX,lookY};lookX=lookY=0;return r;}
         synchronized void pressReload(){reload=true;}
@@ -37,8 +33,6 @@ final class Hud extends View {
     private float fireX(){return getWidth()-dp*104;}private float fireY(){return getHeight()-dp*112;}private float fireR(){return dp*56;}
     private float relX(){return getWidth()-dp*214;}private float relY(){return getHeight()-dp*58;}private float smallR(){return dp*34;}
     private float jumpX(){return getWidth()-dp*226;}private float jumpY(){return getHeight()-dp*156;}
-    private float ragX(){return getWidth()-dp*230;}private float ragY(){return dp*96;}
-    private float pushX(){return getWidth()-dp*310;}private float pushY(){return dp*96;}private float dbgX(){return getWidth()-dp*390;}private float dbgY(){return dp*96;}
     private float sawX(){return getWidth()-dp*92;}private float sawY(){return getHeight()-dp*238;}private float sawR(){return dp*42;}
 
     @Override public boolean onTouchEvent(MotionEvent e){
@@ -48,9 +42,6 @@ final class Hud extends View {
                 if(near(x,y,fireX(),fireY(),fireR()*1.1f)){firePtr=id;in.fire=true;lx=x;ly=y;}
                 else if(near(x,y,sawX(),sawY(),sawR()*1.15f)){sawPtr=id;in.saw=true;lx=x;ly=y;}
                 else if(near(x,y,relX(),relY(),smallR()*1.25f))in.pressReload();
-                else if(near(x,y,ragX(),ragY(),smallR()*1.2f))in.pressRagdoll();
-                else if(near(x,y,pushX(),pushY(),smallR()*1.2f))in.pressPush();
-                else if(near(x,y,dbgX(),dbgY(),smallR()*1.2f))in.debug=!in.debug;
                 else if(near(x,y,jumpX(),jumpY(),smallR()*1.25f)){in.pressJump();in.jumpHeld=true;}
                 else if(x<getWidth()*.42f&&movePtr<0){movePtr=id;mx0=mx=x;my0=my=y;}
                 else if(lookPtr<0){lookPtr=id;lx=x;ly=y;}
@@ -98,11 +89,6 @@ final class Hud extends View {
         button(c,sawX(),sawY(),sawR(),"SAW",in.saw,0xffd39a12);
         button(c,relX(),relY(),smallR(),"RELOAD",game.reloading,0xff7a7a80);
         button(c,jumpX(),jumpY(),smallR(),"JUMP",in.jumpHeld,0xff7a7a80);
-        button(c,ragX(),ragY(),smallR(),"RAGDOLL",false,0xff5a7040);
-        button(c,pushX(),pushY(),smallR(),"PUSH",false,0xff5a7040);
-        button(c,dbgX(),dbgY(),smallR(),"DEBUG",in.debug,0xff40607a);
-        if(in.debug){String[] ls=game.debugText.split("\n");for(int i=0;i<ls.length;i++)text(c,ls[i],dp*24,dp*84+i*dp*16,11,0xffd8f0ff,Paint.Align.LEFT);}
-        else text(c,game.moveState,dp*24,dp*84,12,0xb0ffffff,Paint.Align.LEFT);
         // ammo: loaded shells as icons, reserve as a number
         float ax=w-dp*24,ay=dp*38;
         text(c,game.hasGun?game.ammo+" / "+game.reserve:"NO GUN  "+game.reserve,ax,ay,26,!game.hasGun||game.ammo==0?0xffff5030:0xffffffff,Paint.Align.RIGHT);

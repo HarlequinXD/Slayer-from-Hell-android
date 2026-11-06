@@ -12,14 +12,10 @@ import static com.harlequin.slayer.Model.v;
  * Foot IK finds the floor under each foot, so on stairs each foot lands on its own step and the pelvis drops to let
  * the lower leg reach. The body leans into starts, rocks back on stops and banks into turns; turning on the spot
  * makes her shuffle her feet round instead of skating. Walking into a wall makes her recoil (a hard run into one can
- * knock her down); pushing against it, she puts her free hand on it. When idle she fidgets at random (looks around,
- * shifts her weight, checks the saw, rolls her shoulders), and every step varies a little.
+ * hurt her); pushing against it, she puts her free hand on it.
  *
  * The shotgun is held in her left hand with the stock under the arm (or she has dropped it, and her left arm swings
- * free or pumps when she runs, and reaches down to pick the gun back up). The chainsaw is strapped to her right arm.
- *
- * Every pose can also be expressed as joint positions (pelvis, hips, neck, shoulders, head, knees, ankles, toes,
- * elbows, hands, the saw's tip): the ragdoll and the get-up animations drive the rig through fromJoints().
+ * free or pumps when she runs). The chainsaw is strapped to her right arm.
  *
  * Model space: x forward, y to her left, z up, feet at z = 0 (the same landmarks the baker used). Pure Java.
  */
@@ -39,16 +35,6 @@ final class Hero {
     static float[] handCentre(int s){float[] e=elbow(s),w=wrist(s);return Model.add(w,Model.norm(Model.sub(w,e)),.055f);}
     static final float[] WAIST=v(0,0,1.12f),NECK=v(0,0,1.5f),EYE=v(.06f,0,1.676f),BRAID_ROOT=v(-.115f,0,1.63f),PELVIS=v(0,0,.95f),HEAD=v(.01f,0,1.675f);
 
-    // ---------------------------------------------------------------- joints (shared with the ragdoll and the get-up)
-    static final int J_PELVIS=0,J_HIP_L=1,J_HIP_R=2,J_NECK=3,J_SH_L=4,J_SH_R=5,J_HEAD=6,J_KNEE_L=7,J_KNEE_R=8,J_ANK_L=9,J_ANK_R=10,
-        J_TOE_L=11,J_TOE_R=12,J_ELB_L=13,J_ELB_R=14,J_HAND_L=15,J_HAND_R=16,J_SAW=17,JOINTS=18;
-    /** Bind positions of the joints. */
-    static final float[][] BIND_J=new float[JOINTS][];
-    static{BIND_J[J_PELVIS]=PELVIS;BIND_J[J_HIP_L]=hip(1);BIND_J[J_HIP_R]=hip(-1);BIND_J[J_NECK]=NECK;BIND_J[J_SH_L]=shoulder(1);BIND_J[J_SH_R]=shoulder(-1);
-        BIND_J[J_HEAD]=HEAD;BIND_J[J_KNEE_L]=knee(1);BIND_J[J_KNEE_R]=knee(-1);BIND_J[J_ANK_L]=ankle(1);BIND_J[J_ANK_R]=ankle(-1);BIND_J[J_TOE_L]=toe(1);BIND_J[J_TOE_R]=toe(-1);
-        BIND_J[J_ELB_L]=elbow(1);BIND_J[J_ELB_R]=elbow(-1);BIND_J[J_HAND_L]=handCentre(1);BIND_J[J_HAND_R]=handCentre(-1);}
-    static float[] sawTipBind(){return M.pt(SAW_BIND,v(.97f,0,0));}
-
     /** World matrix of every part (null = not drawn), and the gun's eye frame (the identity: gun poses are in world space). */
     final float[][] mat=new float[PARTS][];float[] eyeFrame=M.id();
     /** Facing, blends and timers. */
@@ -61,20 +47,12 @@ final class Hero {
     // start/stop/turn dynamics
     private float accLean,bank,prevLvx,prevLvy,prevYaw;
     // per-foot state: smoothed floor height, random step variation, stance yaw for turning on the spot
-    private final float[] footFloor={Float.NaN,Float.NaN},stepVar={1,1},stepYaw={0,0};private float stanceYaw,shuffle,shufflePhase;private boolean stanceInit;
+    private final float[] footFloor={Float.NaN,Float.NaN};private float stanceYaw,shuffle,shufflePhase;private boolean stanceInit;
     private float pelvisDrop;
     // wall bumps and leaning on walls
     private float bumpT=9,bumpK,bumpNx,bumpNy,wallLean,wallNx,wallNy;
-    // idle fidgets
-    private final java.util.Random rng=new java.util.Random(7);private float fidgetWait=4,fidgetT=9,fidgetDur=1;private int fidget=-1;
-    /** True during the "check the saw" fidget (the game revs the engine). */
-    boolean fidgetRev;
-    // picking the shotgun up
-    private float pickT=9;private float[] pickAt;
     /** The left hand has the shotgun. */
     boolean hasGun=true;
-    /** Joint positions last frame (for handing velocities to the ragdoll). */
-    final float[][] joints=new float[JOINTS][3],prevJoints=new float[JOINTS][3];
 
     static float wrap(float a){while(a>Math.PI)a-=2*Math.PI;while(a<-Math.PI)a+=2*Math.PI;return a;}
     static float smooth(float a,float b,float x){float t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);}
@@ -83,18 +61,13 @@ final class Hero {
 
     /** A wall hit at this speed, with the wall's normal (pointing back at her). */
     void bump(float nx,float ny,float sp){bumpT=0;bumpK=Math.min(1,sp/3.5f);bumpNx=nx;bumpNy=ny;}
-    /** Begin reaching for the dropped shotgun at p. */
-    void pickUp(float[] p){pickT=0;pickAt=p.clone();}
-    boolean picking(){return pickT<.55f;}
-    /** True once the hand has closed on the gun during a pick-up. */
-    boolean pickGrabbed(){return pickT>=.28f&&pickT<.55f;}
 
     /**
      * Advances the animation and poses every part.
      * @param camYaw camera heading; @param camPitch camera pitch (up positive); @param firing fire held.
      */
     void update(float dt,float time,Player pl,Level level,float camYaw,float camPitch,boolean firing,boolean sawHeld,Gun gun){
-        steps=0;fidgetRev=false;
+        steps=0;
         // ---------------------------------------------------------------- facing and stance
         if((hasGun&&(firing||gun.state!=Gun.IDLE))||sawHeld)aimHold=1.4f;else aimHold-=dt;
         boolean aiming=aimHold>0;
@@ -125,7 +98,7 @@ final class Hero {
         else if(ground&&speed<.08f){float near=Math.round(phase*2)/2f;phase=approach(phase,near,3,dt);}   // finish the step and settle
         phase-=(float)Math.floor(phase);
         for(int f=0;f<2;f++){float off=f*.5f;float a=lastPhase-off,b=phase-off;a-=(float)Math.floor(a);b-=(float)Math.floor(b);
-            if(b<a&&(gaitAmp>.3f||shuffle>0)){steps++;stepVar[f]=.85f+rng.nextFloat()*.3f;stepYaw[f]=(rng.nextFloat()-.5f)*.12f;}}
+            if(b<a&&(gaitAmp>.3f||shuffle>0))steps++;}
         lastPhase=phase;
         // jump and landing
         if(pl.justJumped)jumpT=0;jumpT+=dt;
@@ -144,16 +117,7 @@ final class Hero {
         boolean pushing=pl.pushingWall&&ground;if(pushing){wallNx=pl.wallNx;wallNy=pl.wallNy;}
         wallLean=approach(wallLean,pushing?1:0,pushing?6:4,dt);
         float bnx=ch*bumpNx+sh*bumpNy,bny=-sh*bumpNx+ch*bumpNy;   // bump normal in the hips frame
-        // idle fidgets (random)
-        boolean idle=speed<.1f&&aim<.1f&&ground&&!picking()&&wallLean<.1f&&shuffle<=0;
-        fidgetT+=dt;
-        if(idle){fidgetWait-=dt;if(fidgetWait<=0&&fidgetT>fidgetDur){fidget=rng.nextInt(4);fidgetT=0;fidgetDur=2.2f+rng.nextFloat()*1.4f;fidgetWait=5+rng.nextFloat()*6;}}
-        else{if(fidgetT<fidgetDur)fidgetT=Math.max(fidgetT,fidgetDur-.35f);}
-        float fk=fidgetT<fidgetDur?smooth(0,.35f,fidgetT)*smooth(0,.35f,fidgetDur-fidgetT):0;float fu=fidgetT/Math.max(fidgetDur,1e-3f);
-        float fLook=fidget==0?.7f*(float)Math.sin(2*Math.PI*fu)*fk:0,fShift=fidget==1?fk:0,fSaw=fidget==2?fk:0,fRoll=fidget==3?fk*(float)Math.sin(4*Math.PI*fu):0;
-        if(fidget==2&&fk>.5f&&fu>.35f&&fu<.6f)fidgetRev=true;
-        // picking the shotgun up
-        pickT+=dt;float pick=pickT<.55f?(float)Math.sin(Math.PI*pickT/.55f):0;
+        final float fLook=0,fShift=0,fSaw=0,fRoll=0,fu=0,pick=0;   // (no random idle variations)
 
         // ---------------------------------------------------------------- feet first (foot IK finds each foot's floor)
         float[] root=v(pl.x,pl.y,pl.z+pl.stepSmooth);
@@ -168,7 +132,7 @@ final class Hero {
                 pitch=q<.15f?-.25f*(1-q/.15f):(q>.68f?.55f*(float)Math.pow((q-.68f)/.32f,2):0);
                 lift=pitch>0?.17f*(float)Math.sin(pitch):0;}
             else{float q=(p-stance)/(1-stance);float e=smooth(0,1,q);off=-exc+2*exc*e;swing=true;
-                float h=mix(.08f,.2f,run)*Math.min(1,speed/1.4f+.3f)*stepVar[si];
+                float h=mix(.08f,.2f,run)*Math.min(1,speed/1.4f+.3f);
                 lift=h*(float)Math.sin(Math.PI*q)+run*.16f*(float)Math.sin(Math.PI*Math.min(1,q*1.5f));
                 off-=run*.12f*(float)Math.sin(Math.PI*Math.min(1,q*1.4f));     // heel kicks up behind
                 pitch=mix(.55f,-.18f,smooth(0,.85f,q));}
@@ -241,7 +205,7 @@ final class Hero {
             float[][] ik=ik(hipW,tgt[si],pole[si],l1,l2);
             mat[sidePart(s,S_THIGH)]=bone(hip(s),knee(s),v(1,0,0),hipW,ik[0],pole[si]);
             mat[sidePart(s,S_SHIN)]=bone(knee(s),an,v(1,0,0),ik[0],ik[1],pole[si]);
-            float[] aw=ik[1];float fy=wrap(feetYaw+(hipsYaw-feetYaw)*gaitAmp)+s*.07f+stepYaw[si]*gaitAmp;
+            float[] aw=ik[1];float fy=wrap(feetYaw+(hipsYaw-feetYaw)*gaitAmp)+s*.07f;
             mat[sidePart(s,S_FOOT)]=M.mul(M.tr(aw[0],aw[1],aw[2]),M.mul(M.rz(fy),M.mul(M.ry(pitchF[si]),M.tr(-an[0],-an[1],-an[2]))));
         }
 
@@ -298,13 +262,11 @@ final class Hero {
             float[] h=lerp3(lerp3(hand,runH,run),guard,aim*(1-run*.5f));float[] pp=lerp3(lerp3(pl2,runP,run),guardP,aim);
             h[2]+=(float)Math.sin(time*1.6f+1)*.005f;
             float[] hw=M.pt(T,h);
-            if(pickAt!=null&&pick>0){hw=Hero.lerpW(hw,v(pickAt[0],pickAt[1],pickAt[2]+.04f),smooth(0,.6f,pick));}
             if(wallHand!=null){float k=Math.max(wallLean,Math.min(1,bump*1.3f));hw=Hero.lerpW(hw,wallHand,k);}
             arm(1,T,hw,Model.norm(M.dir(T,pp)));
         }
         eyeFrame=M.id();
         mat[P_GLAIVE_SHAFT]=mat[P_GLAIVE_HEAD]=null;
-        storeJoints();
     }
     static float[] lerpW(float[] a,float[] b,float t){return v(mix(a[0],b[0],t),mix(a[1],b[1],t),mix(a[2],b[2],t));}
 
@@ -318,59 +280,9 @@ final class Hero {
         mat[P_BRAID]=M.mul(mat[P_HEAD],pivot(BRAID_ROOT,M.mul(M.ry(-braidA),M.rx(braidB))));
     }
 
-    // ---------------------------------------------------------------- joints <-> pose
-    /** Joint positions of the current pose (and last frame's, for velocities). */
-    private void storeJoints(){
-        for(int j=0;j<JOINTS;j++)System.arraycopy(joints[j],0,prevJoints[j],0,3);
-        float[][] J=currentJoints();for(int j=0;j<JOINTS;j++)System.arraycopy(J[j],0,joints[j],0,3);
-    }
-    float[][] currentJoints(){
-        float[][] J=new float[JOINTS][];float[] T=mat[P_TORSO],Pm=mat[P_PELVIS];
-        J[J_PELVIS]=M.pt(Pm,PELVIS);J[J_HIP_L]=M.pt(Pm,hip(1));J[J_HIP_R]=M.pt(Pm,hip(-1));J[J_NECK]=M.pt(T,NECK);J[J_SH_L]=M.pt(T,shoulder(1));J[J_SH_R]=M.pt(T,shoulder(-1));
-        J[J_HEAD]=M.pt(mat[P_HEAD],HEAD);
-        for(int s=-1;s<=1;s+=2){int o=s>0?0:1;
-            J[J_KNEE_L+o]=M.pt(mat[sidePart(s,S_THIGH)],knee(s));J[J_ANK_L+o]=M.pt(mat[sidePart(s,S_SHIN)],ankle(s));J[J_TOE_L+o]=M.pt(mat[sidePart(s,S_FOOT)],toe(s));
-            J[J_ELB_L+o]=M.pt(mat[sidePart(s,S_UPPER)],elbow(s));J[J_HAND_L+o]=M.pt(mat[sidePart(s,S_FORE)],handCentre(s));}
-        J[J_SAW]=M.pt(sawMat,v(.97f,0,0));
-        return J;
-    }
-    /** Poses every part from joint positions (the ragdoll, the get-up, and blends between them and locomotion). */
-    void fromJoints(float[][] J,float dt){
-        float[] up=Model.norm(Model.sub(J[J_NECK],J[J_PELVIS]));
-        float[] left=Model.add(Model.sub(J[J_HIP_L],J[J_HIP_R]),Model.sub(J[J_SH_L],J[J_SH_R]),1);left=Model.norm(Model.sub(left,Model.mul(up,Model.dot(left,up))));
-        float[] fwd=Model.cross(left,up);
-        float[] T=M.mul(M.basis(J[J_PELVIS],fwd,left,up),M.tr(-PELVIS[0],-PELVIS[1],-PELVIS[2]));
-        mat[P_TORSO]=T;mat[P_PELVIS]=T;mat[sidePart(1,S_PAULDRON)]=T;mat[sidePart(-1,S_PAULDRON)]=T;
-        float[] hu=Model.norm(Model.sub(J[J_HEAD],J[J_NECK]));float[] hf=Model.norm(Model.sub(fwd,Model.mul(hu,Model.dot(fwd,hu))));float[] hl=Model.cross(hu,hf);
-        float[] hb=Model.norm(Model.sub(HEAD,NECK));   // bind neck->head axis leans a touch forward
-        float[] H=M.mul(M.basis(J[J_NECK],hf,hl,hu),M.mul(rotTo(hb,v(0,0,1)),M.tr(-NECK[0],-NECK[1],-NECK[2])));
-        mat[P_HEAD]=H;
-        braid(dt,0,0,0,(float)Math.atan2(fwd[1],fwd[0]),0);
-        for(int s=-1;s<=1;s+=2){int o=s>0?0:1;
-            float[] sh=J[J_SH_L+o],el=J[J_ELB_L+o],hd=J[J_HAND_L+o];
-            float[] ePt=Model.sub(el,Model.mul(Model.add(sh,hd,1),.5f));if(Model.len(ePt)<.02f)ePt=Model.mul(fwd,-1);
-            mat[sidePart(s,S_UPPER)]=bone(shoulder(s),elbow(s),v(-1,0,0),sh,el,ePt);
-            float[] fore=bone(elbow(s),handCentre(s),v(-1,0,0),el,hd,ePt);mat[sidePart(s,S_FORE)]=fore;mat[sidePart(s,S_HAND)]=s<0?null:fore;
-            float[] hp=J[J_HIP_L+o],kn=J[J_KNEE_L+o],an=J[J_ANK_L+o],to=J[J_TOE_L+o];
-            float[] kPt=Model.sub(kn,Model.mul(Model.add(hp,an,1),.5f));if(Model.len(kPt)<.02f)kPt=fwd;
-            mat[sidePart(s,S_THIGH)]=bone(hip(s),knee(s),v(1,0,0),hp,kn,kPt);
-            mat[sidePart(s,S_SHIN)]=bone(knee(s),ankle(s),v(1,0,0),kn,an,kPt);
-            mat[sidePart(s,S_FOOT)]=bone(ankle(s),toe(s),Model.sub(knee(s),ankle(s)),an,to,Model.sub(kn,an));
-        }
-        sawMat=M.mul(mat[sidePart(-1,S_FORE)],SAW_BIND);
-        float[] caddy=M.mul(sawMat,CADDY_FRAME);for(int k=0;k<2;k++)caddyMats[k]=M.mul(caddy,M.tr(0,k==0?-Gun.BX:Gun.BX,0));
-        mat[P_GLAIVE_SHAFT]=mat[P_GLAIVE_HEAD]=null;
-        for(int j=0;j<JOINTS;j++){System.arraycopy(joints[j],0,prevJoints[j],0,3);System.arraycopy(J[j],0,joints[j],0,3);}
-    }
-    /** Rotation taking unit vector a to unit vector b. */
-    static float[] rotTo(float[] a,float[] b){
-        float[] c=Model.cross(a,b);float s=Model.len(c),d=Model.dot(a,b);if(s<1e-6f)return M.id();
-        float[] k=Model.mul(c,1/s);float ang=(float)Math.atan2(s,d);float co=(float)Math.cos(ang),si=(float)Math.sin(ang),t=1-co;
-        float x=k[0],y=k[1],z=k[2];
-        return new float[]{t*x*x+co,t*x*y+si*z,t*x*z-si*y,0, t*x*y-si*z,t*y*y+co,t*y*z+si*x,0, t*x*z+si*y,t*y*z-si*x,t*z*z+co,0, 0,0,0,1};
-    }
-    /** Hand the body over to the locomotion facing (after a get-up). */
-    void resetFacing(float yaw){bodyYaw=yaw;prevYaw=yaw;stanceYaw=yaw+mix(.08f,.18f,aim)*mix(.4f,1,hasGun?1:0);footFloor[0]=footFloor[1]=Float.NaN;pelvisDrop=0;phase=0;lastPhase=0;}
+    /** Pelvis and ankle positions of the current pose (used by the tests). */
+    float[] pelvisPos(){return M.pt(mat[P_PELVIS],PELVIS);}
+    float[] anklePos(int s){return M.pt(mat[sidePart(s,S_SHIN)],ankle(s));}
     /** The chainsaw: world matrix, how much it is raised and running (0..1), and the shells waiting in its caddy. */
     float[] sawMat;float saw;private float cutPhase;
     final float[][] caddyMats=new float[2][];int caddyCount;

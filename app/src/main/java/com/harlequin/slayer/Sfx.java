@@ -9,19 +9,24 @@ import java.util.Random;
 
 /** Sound effects synthesised at start-up (no audio files): written as WAVs to the cache and played with SoundPool. */
 final class Sfx {
-    static final int BLAST=0,PUMP_BACK=1,PUMP_FWD=2,SHELL_IN=3,TINK=4,DRY=5,STEP=6,LAND=7,SIZZLE=8,DRONE=9,JUMP=10,COUNT=11;
+    static final int BLAST=0,PUMP_BACK=1,PUMP_FWD=2,SHELL_IN=3,TINK=4,DRY=5,STEP=6,LAND=7,SIZZLE=8,DRONE=9,JUMP=10,ENGINE=11,GRIND=12,COUNT=13;
     private static final int RATE=44100;
     private final SoundPool pool;private final int[] ids=new int[COUNT];private final boolean[] ready=new boolean[COUNT];
-    private final Random rng=new Random(3);private int droneStream;
+    private final Random rng=new Random(3);private int droneStream,engineStream;private float engVol=.2f,engRate=.6f;
 
     Sfx(Context c){
         pool=new SoundPool.Builder().setMaxStreams(16).setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()).build();
-        pool.setOnLoadCompleteListener((p,id,status)->{for(int i=0;i<COUNT;i++)if(ids[i]==id){ready[i]=status==0;if(i==DRONE&&ready[i])droneStream=p.play(id,.35f,.35f,0,-1,1);}});
+        pool.setOnLoadCompleteListener((p,id,status)->{for(int i=0;i<COUNT;i++)if(ids[i]==id){ready[i]=status==0;if(i==DRONE&&ready[i])droneStream=p.play(id,.35f,.35f,0,-1,1);if(i==ENGINE&&ready[i])engineStream=p.play(id,engVol,engVol,0,-1,engRate);}});
         File dir=c.getCacheDir();
         new Thread(()->{for(int i=0;i<COUNT;i++){try{File f=new File(dir,"sfx"+i+".wav");write(f,make(i));ids[i]=pool.load(f.getPath(),1);}catch(Exception ignored){}}},"sfx").start();
     }
     void play(int s,float vol){play(s,vol,1);}
     void play(int s,float vol,float rate){if(s>=0&&s<COUNT&&ready[s])pool.play(ids[s],vol,vol,1,0,rate*(.96f+rng.nextFloat()*.08f));}
+    /** The chainsaw's two-stroke engine (a seamless loop): volume and playback rate follow the throttle. */
+    void engine(float vol,float rate){
+        rate=Math.max(.5f,Math.min(2f,rate));if(Math.abs(vol-engVol)<.01f&&Math.abs(rate-engRate)<.01f)return;engVol=vol;engRate=rate;
+        if(engineStream!=0){pool.setVolume(engineStream,vol,vol);pool.setRate(engineStream,rate);}
+    }
     void pause(){pool.autoPause();}
     void resume(){pool.autoResume();}
 
@@ -51,6 +56,14 @@ final class Sfx {
             case DRONE:{float[] a=new float[RATE*4];float lp=0;for(int i=0;i<a.length;i++){float t=i/(float)RATE;lp+=(rng.nextFloat()*2-1-lp)*.004f;
                 a[i]=((float)Math.sin(2*Math.PI*41*t)*.25f+(float)Math.sin(2*Math.PI*61.5f*t)*.12f+lp*4f)*.4f*(.8f+.2f*(float)Math.sin(2*Math.PI*t/2));}
                 int fade=RATE/10;for(int i=0;i<fade;i++){float k=i/(float)fade;a[i]*=k;a[a.length-1-i]*=k;}return a;}
+            case ENGINE:{   // two-stroke: a buzzy pulse train at 75 Hz (exactly 75 cycles in a second, so it loops cleanly) with exhaust rasp
+                float[] a=new float[RATE];float lp=0,hp=0,prev=0;Random r=new Random(11);float[] jit=new float[75];for(int k=0;k<75;k++)jit[k]=.75f+r.nextFloat()*.5f;
+                for(int i=0;i<a.length;i++){float t=i/(float)RATE;float ph=(t*75)%1f;int cyc=(int)(t*75)%75;
+                    float pulse=(float)Math.exp(-ph*9)*jit[cyc]-.11f;float saw2=(ph-.5f)*.35f;float n=r.nextFloat()*2-1;hp=.85f*(hp+n-prev);prev=n;
+                    lp+=((pulse+saw2)-lp)*.35f;a[i]=(lp*.9f+hp*.12f*(float)Math.exp(-ph*5)+(float)Math.sin(2*Math.PI*150*t)*.08f)*.7f;}
+                int fade=RATE/200;for(int i=0;i<fade;i++){float k=i/(float)fade;a[a.length-1-i]=a[a.length-1-i]*k+a[i]*(1-k);}return a;}
+            case GRIND:{float[] a=new float[(int)(RATE*.22f)];float hp=0,prev=0;for(int i=0;i<a.length;i++){float t=i/(float)RATE;float n=rng.nextFloat()*2-1;hp=.92f*(hp+n-prev);prev=n;
+                float env=Math.min(1,t/.01f)*(float)Math.exp(-t*9);a[i]=(hp*.6f+(float)Math.sin(2*Math.PI*1900*t+3*Math.sin(2*Math.PI*37*t))*.35f+(float)Math.sin(2*Math.PI*3100*t)*.2f)*env*.8f;}return a;}
             default:return new float[100];
         }
     }

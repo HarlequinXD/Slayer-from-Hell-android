@@ -10,12 +10,12 @@ import android.view.View;
 
 /**
  * The touch controls and HUD drawn over the 3D view: a floating move stick on the left, drag anywhere on the right
- * to look (also while holding Fire), Fire / Reload / Jump buttons, crosshair, ammo, health, frame rate.
+ * to look (also while holding Fire), Fire / Saw (hold) / Reload / Jump buttons, crosshair, ammo, health, frame rate.
  */
 final class Hud extends View {
     /** Shared with the GL thread. */
     static final class Input {
-        volatile float moveX,moveY;volatile boolean fire,jumpHeld;
+        volatile float moveX,moveY;volatile boolean fire,jumpHeld,saw;
         private float lookX,lookY;private boolean reload,jump;
         synchronized void look(float dx,float dy){lookX+=dx;lookY+=dy;}
         synchronized float[] takeLook(){float[] r={lookX,lookY};lookX=lookY=0;return r;}
@@ -26,19 +26,21 @@ final class Hud extends View {
     }
     final Input in=new Input();
     private final Game game;private final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);private final float dp;
-    private int movePtr=-1,lookPtr=-1,firePtr=-1;private float mx0,my0,mx,my,lx,ly;
+    private int movePtr=-1,lookPtr=-1,firePtr=-1,sawPtr=-1;private float mx0,my0,mx,my,lx,ly;
     private final RectF r=new RectF();
 
     Hud(Context c,Game g){super(c);game=g;dp=c.getResources().getDisplayMetrics().density;p.setTypeface(Typeface.create(Typeface.DEFAULT,Typeface.BOLD));}
     private float fireX(){return getWidth()-dp*104;}private float fireY(){return getHeight()-dp*112;}private float fireR(){return dp*56;}
     private float relX(){return getWidth()-dp*214;}private float relY(){return getHeight()-dp*58;}private float smallR(){return dp*34;}
     private float jumpX(){return getWidth()-dp*226;}private float jumpY(){return getHeight()-dp*156;}
+    private float sawX(){return getWidth()-dp*92;}private float sawY(){return getHeight()-dp*238;}private float sawR(){return dp*42;}
 
     @Override public boolean onTouchEvent(MotionEvent e){
         int a=e.getActionMasked(),idx=e.getActionIndex(),id=e.getPointerId(idx);
         switch(a){
             case MotionEvent.ACTION_DOWN:case MotionEvent.ACTION_POINTER_DOWN:{float x=e.getX(idx),y=e.getY(idx);
                 if(near(x,y,fireX(),fireY(),fireR()*1.1f)){firePtr=id;in.fire=true;lx=x;ly=y;}
+                else if(near(x,y,sawX(),sawY(),sawR()*1.15f)){sawPtr=id;in.saw=true;lx=x;ly=y;}
                 else if(near(x,y,relX(),relY(),smallR()*1.25f))in.pressReload();
                 else if(near(x,y,jumpX(),jumpY(),smallR()*1.25f)){in.pressJump();in.jumpHeld=true;}
                 else if(x<getWidth()*.42f&&movePtr<0){movePtr=id;mx0=mx=x;my0=my=y;}
@@ -49,13 +51,14 @@ final class Hud extends View {
                     if(pid==movePtr){mx=x;my=y;float R=dp*60,dx=(mx-mx0)/R,dy=(my-my0)/R;float l=(float)Math.hypot(dx,dy);
                         if(l>1.4f){mx0+=(mx-mx0)*(1-1.4f/l);my0+=(my-my0)*(1-1.4f/l);}   // the stick follows a far-dragging thumb
                         float sx=Math.max(-1,Math.min(1,dx)),sy=Math.max(-1,Math.min(1,-dy));in.moveX=sx;in.moveY=sy;}
-                    else if(pid==lookPtr||pid==firePtr){in.look((x-lx)/dp,(y-ly)/dp);lx=x;ly=y;}}
+                    else if(pid==lookPtr||pid==firePtr||pid==sawPtr){in.look((x-lx)/dp,(y-ly)/dp);lx=x;ly=y;}}
                 break;
             case MotionEvent.ACTION_UP:case MotionEvent.ACTION_POINTER_UP:case MotionEvent.ACTION_CANCEL:
-                if(a==MotionEvent.ACTION_CANCEL){movePtr=lookPtr=firePtr=-1;in.fire=false;in.moveX=in.moveY=0;in.jumpHeld=false;break;}
+                if(a==MotionEvent.ACTION_CANCEL){movePtr=lookPtr=firePtr=sawPtr=-1;in.fire=false;in.saw=false;in.moveX=in.moveY=0;in.jumpHeld=false;break;}
                 if(id==movePtr){movePtr=-1;in.moveX=in.moveY=0;}
                 if(id==lookPtr)lookPtr=-1;
                 if(id==firePtr){firePtr=-1;in.fire=false;}
+                if(id==sawPtr){sawPtr=-1;in.saw=false;}
                 in.jumpHeld=false;
                 break;
         }
@@ -83,6 +86,7 @@ final class Hud extends View {
         else{p.setColor(0x26ffffff);c.drawCircle(dp*120,h-dp*110,dp*60,p);text(c,"MOVE",dp*120,h-dp*106,11,0x70ffffff,Paint.Align.CENTER);}
         // buttons
         button(c,fireX(),fireY(),fireR(),"FIRE",in.fire,0xffd2401a);
+        button(c,sawX(),sawY(),sawR(),"SAW",in.saw,0xffd39a12);
         button(c,relX(),relY(),smallR(),"RELOAD",game.reloading,0xff7a7a80);
         button(c,jumpX(),jumpY(),smallR(),"JUMP",in.jumpHeld,0xff7a7a80);
         // ammo: loaded shells as icons, reserve as a number

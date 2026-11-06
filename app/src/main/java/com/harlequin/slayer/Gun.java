@@ -144,6 +144,30 @@ final class Gun {
         mat[P_SLEEVE]=rightArm;mat[P_CUFF]=rightArm;
         recoilNow=recoil;
     }
+    /** How far the barrels hang open on the hinge right now (radians), and how far the extractors have pushed the cases out. */
+    float openAngle(){
+        switch(state){case OPEN:return .62f*ease((t-.05f)/.22f);case LOAD:return .62f;case CLOSE:return .62f*(1-ease(t/.08f));default:return 0;}
+    }
+    /**
+     * Third-person pose: the gun (action + stock) at world matrix G, held by the character. Fills the same outputs as
+     * pose() but in world space (the eye frame is the identity): barrels on the hinge, shells in the chambers (spent
+     * cases sliding out as it opens), the muzzle and chamber points, and the recoil amount.
+     */
+    void poseWorld(float[] G){
+        float open=openAngle(),extract=state==OPEN?ease((t-.24f)/.06f):0;
+        recoilNow=state==FIRE?(t<.04f?t/.04f:(float)Math.exp(-(t-.04f)*9)):0;
+        float[] Bm=M.mul(G,M.mul(M.tr(HINGE_X,0,HINGE_Z),M.mul(M.ry(open),M.tr(-HINGE_X,0,-HINGE_Z))));
+        for(int i=0;i<PARTS;i++)visible[i]=false;visible[P_ACTION]=visible[P_BARRELS]=true;
+        mat[P_ACTION]=G;mat[P_BARRELS]=Bm;
+        shellCount=0;boolean opened=state==OPEN||state==LOAD||state==CLOSE;
+        for(int b=0;b<2;b++){float y=b==0?-BX:BX;chamberCam[b]=M.pt(Bm,v(CHAMBER_X-.02f,y,0));
+            if(opened&&(live[b]||spent[b])){shellMats[shellCount]=M.mul(Bm,M.tr(CHAMBER_X-(spent[b]?.016f*extract:0),y,0));shellSpent[shellCount++]=spent[b];}}
+        muzzleCam=M.pt(Bm,v(MUZZLE_X,firedBarrel==0?-BX:BX,0));
+    }
+    /** The barrels' frame (for docking the chambers onto shells): G times the hinge at the given angle. */
+    static float[] barrelsOf(float[] G,float open){return M.mul(G,M.mul(M.tr(HINGE_X,0,HINGE_Z),M.mul(M.ry(open),M.tr(-HINGE_X,0,-HINGE_Z))));}
+    /** Inverse of the hinge transform: G from a barrels frame. */
+    static float[] actionOf(float[] Bm,float open){return M.mul(Bm,M.mul(M.tr(HINGE_X,0,HINGE_Z),M.mul(M.ry(-open),M.tr(-HINGE_X,0,-HINGE_Z))));}
     private static float[] arm(float[] elbow,float[] wrist){
         float[] d=Model.sub(wrist,elbow);float len=(float)Math.sqrt(Model.dot(d,d));float[] x=Model.norm(d);
         float[] y=Model.norm(Model.cross(v(0,0,1),x));float[] z=Model.cross(x,y);

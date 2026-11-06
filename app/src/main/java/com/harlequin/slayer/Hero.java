@@ -54,17 +54,17 @@ final class Hero {
      * Advances the animation and poses every part.
      * @param camYaw camera heading; @param camPitch camera pitch (up positive); @param firing fire held.
      */
-    void update(float dt,float time,Player pl,float camYaw,float camPitch,boolean firing,Gun gun){
+    void update(float dt,float time,Player pl,float camYaw,float camPitch,boolean firing,boolean sawHeld,Gun gun){
         steps=0;
         // ---------------------------------------------------------------- facing and stance
-        if(firing||gun.state!=Gun.IDLE)aimHold=1.4f;else aimHold-=dt;
+        if(firing||sawHeld||gun.state!=Gun.IDLE)aimHold=1.4f;else aimHold-=dt;
         boolean aiming=aimHold>0;
         aim=approach(aim,aiming?1:0,aiming?14:4,dt);
         lowReady=1-aim;
         speed=(float)Math.hypot(pl.vx,pl.vy);
         float target=aiming?camYaw:(speed>.4f?(float)Math.atan2(pl.vy,pl.vx):bodyYaw);
         float turn=wrap(target-bodyYaw);float rate=aiming?16:9;bodyYaw=wrap(bodyYaw+turn*Math.min(1,rate*dt));
-        float hipOff=-mix(.14f,.32f,aim),twist=-mix(.22f,.3f,aim);
+        float hipOff=mix(.08f,.18f,aim),twist=mix(.04f,.12f,aim);   // the saw side leads, the shotgun side is tucked back
         float hipsYaw=bodyYaw+hipOff;
         // gait blends
         boolean ground=pl.onGround;
@@ -154,17 +154,76 @@ final class Hero {
             mat[sidePart(s,S_FOOT)]=M.mul(M.tr(aw[0],aw[1],aw[2]),M.mul(M.rz(hipsYaw+s*.07f),M.mul(M.ry(pitch),M.tr(-an[0],-an[1],-an[2]))));
         }
 
-        // ---------------------------------------------------------------- the gun in the eye frame, then the arms
-        float[] eyeW=M.pt(H,EYE);
-        float[] lr=pivot(v(-.12f,-.12f,-.17f),M.mul(M.rz(.42f*lowReady),M.ry(.62f*lowReady)));
-        float sway=(float)Math.sin(time*1.3f)*.004f*(1-aim)+(float)Math.sin(phase*4*Math.PI)*.006f*gaitAmp;
-        eyeFrame=M.mul(M.tr(eyeW[0],eyeW[1],eyeW[2]+sway),M.mul(M.rz(eyeYaw),M.mul(M.ry(-eyePitch),M.mul(M.tr(-.02f,-.035f,-.055f),M.mul(M.scale(.9f,.9f,.9f),lr)))));
-        gun.pose(0,0,0,0,time,dt);
-        float[] G=M.mul(eyeFrame,gun.mat[Gun.P_ACTION]),Lh=M.mul(eyeFrame,gun.mat[Gun.P_LHAND]);
-        float[] rightGrip=M.pt(G,v(-.1f,-.004f,-.016f)),leftGrip=M.pt(Lh,v(-.005f,0,-.024f));
-        arm(-1,T,rightGrip,M.dir(T,v(-.25f,-.75f,-.8f)));
-        arm(1,T,leftGrip,M.dir(T,v(-.1f,.55f,-1f)));
+        // ---------------------------------------------------------------- right arm: the chainsaw
+        saw=approach(saw,sawHeld?1:0,sawHeld?10:5,dt);
+        float cross=0;
+        if(gun.state==Gun.OPEN)cross=smooth(.15f,.45f,gun.t);else if(gun.state==Gun.LOAD)cross=1;else if(gun.state==Gun.CLOSE)cross=1-smooth(0,.3f,gun.t);
+        cutPhase+=dt*7*saw;
+        float thrust=(float)Math.sin(cutPhase)*.05f*saw;
+        float[] idleH=v(.2f,-.25f,1.03f),cutH=v(.43f+thrust,-.13f,1.22f+.02f*(float)Math.sin(cutPhase*.5f)),crossH=v(.3f,.02f,1.14f);
+        float[] idleP=v(-.4f,-.6f,-.7f),cutP=v(-.2f,-.8f,-.6f),crossP=v(.25f,-1f,-.75f);
+        float[] hT=lerp3(lerp3(idleH,cutH,saw),crossH,cross),pT=lerp3(lerp3(idleP,cutP,saw),crossP,cross);
+        hT[2]+=(float)Math.sin(time*1.6f)*.006f+(float)Math.sin(phase*4*Math.PI)*.012f*gaitAmp;
+        arm(-1,T,M.pt(T,hT),Model.norm(M.dir(T,pT)));
+        mat[sidePart(-1,S_HAND)]=null;                 // her right hand is inside the sleeve
+        float shake=saw>.05f?.0015f*(float)Math.sin(time*170)*(.4f+saw):.0006f*(float)Math.sin(time*110);
+        sawMat=M.mul(M.mul(mat[sidePart(-1,S_FORE)],SAW_BIND),M.tr(0,shake,shake*.6f));
+        float[] caddy=M.mul(sawMat,CADDY_FRAME);
+        caddyCount=Math.min(2,gun.reserve);
+        for(int k=0;k<2;k++)caddyMats[k]=M.mul(caddy,M.tr(0,k==0?-Gun.BX:Gun.BX,0));
+
+        // ---------------------------------------------------------------- left hand: the shotgun, one-handed, stock under the arm
+        float[] armpit=M.pt(T,v(-.035f,.165f,1.3f));
+        float gy=eyeYaw-.04f*aim,gp=eyePitch;
+        float[] R=M.mul(M.rz(gy+(1-aim)*.18f),M.ry(-gp+(1-aim)*.55f));
+        float[] hold=M.mul(M.tr(armpit[0],armpit[1],armpit[2]),M.mul(R,M.tr(.43f,0,.06f)));
+        float[] grip=v(-.1f,0,-.02f);
+        float rec=gun.state==Gun.FIRE?(gun.t<.04f?gun.t/.04f:(float)Math.exp(-(gun.t-.04f)*9)):0;
+        hold=M.mul(hold,M.mul(M.tr(-.05f*rec,0,0),pivot(grip,M.ry(-.38f*rec))));
+        float[] G=hold;
+        float[] low=M.mul(hold,pivot(grip,M.mul(M.ry(.42f),M.rx(.35f))));      // muzzle down and rolled for the flick
+        if(gun.state==Gun.OPEN){float b=smooth(0,.25f,gun.t);G=mlerp(hold,low,b);}
+        else if(gun.state==Gun.LOAD){
+            float open=gun.openAngle();
+            float[] seat=Gun.actionOf(M.mul(caddy,M.tr(-Gun.CHAMBER_X,0,0)),open),appr=Gun.actionOf(M.mul(caddy,M.tr(-Gun.CHAMBER_X+.085f,0,0)),open);
+            float t=gun.t;
+            if(t<.32f)G=mlerp(low,appr,smooth(0,.32f,t));else if(t<.62f)G=mlerp(appr,seat,smooth(.32f,.62f,t));
+            else if(t<.76f)G=mlerp(seat,appr,smooth(.62f,.76f,t));else G=mlerp(appr,low,smooth(.76f,.95f,t));}
+        else if(gun.state==Gun.CLOSE){float b=smooth(0,.3f,gun.t);float[] flick=M.mul(hold,pivot(grip,M.ry(-.25f)));G=b<.4f?mlerp(low,flick,b/.4f):mlerp(flick,hold,(b-.4f)/.6f);}
+        gun.poseWorld(G);
+        arm(1,T,M.pt(G,grip),Model.norm(M.dir(T,v(-.3f,.7f,-.6f))));
+        eyeFrame=M.id();
         mat[P_GLAIVE_SHAFT]=mat[P_GLAIVE_HEAD]=null;
+    }
+    /** The chainsaw: world matrix, how much it is raised and running (0..1), and the shells waiting in its caddy. */
+    float[] sawMat;float saw;private float cutPhase;
+    final float[][] caddyMats=new float[2][];int caddyCount;
+    /** Saw space -> her bind pose: the grip bar (saw x = .25) in her right fist, the engine on the side away from the elbow's point. */
+    static final float[] SAW_BIND;
+    /** Caddy frame in saw space: origin between the two shells' rims, x = up the shells, y = back along the forearm, z = away from her. */
+    static final float[] CADDY_FRAME=M.basis(v(.2f,-.084f,-.01f),v(0,0,1),v(-1,0,0),v(0,-1,0));
+    static{float[] e=elbow(-1),hc=handCentre(-1);float[] ax=Model.norm(Model.sub(hc,e));
+        float[] z=Model.norm(Model.sub(v(1,0,0),Model.mul(ax,ax[0])));float[] y=Model.cross(z,ax);
+        SAW_BIND=M.basis(Model.add(hc,ax,-.25f),ax,y,z);}
+    private static float[] lerp3(float[] a,float[] b,float t){return v(mix(a[0],b[0],t),mix(a[1],b[1],t),mix(a[2],b[2],t));}
+    /** Blend two rigid transforms (position lerp, rotation slerp). */
+    static float[] mlerp(float[] A,float[] B,float t){
+        if(t<=0)return A;if(t>=1)return B;
+        float[] qa=quat(A),qb=quat(B);float d=qa[0]*qb[0]+qa[1]*qb[1]+qa[2]*qb[2]+qa[3]*qb[3];if(d<0){for(int i=0;i<4;i++)qb[i]=-qb[i];d=-d;}
+        float[] q=new float[4];if(d>.9995f){for(int i=0;i<4;i++)q[i]=mix(qa[i],qb[i],t);}
+        else{float th=(float)Math.acos(d),sn=(float)Math.sin(th),wa=(float)Math.sin((1-t)*th)/sn,wb=(float)Math.sin(t*th)/sn;for(int i=0;i<4;i++)q[i]=qa[i]*wa+qb[i]*wb;}
+        float l=(float)Math.sqrt(q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+q[3]*q[3]);for(int i=0;i<4;i++)q[i]/=l;
+        float x=q[0],y=q[1],z=q[2],w=q[3];
+        return new float[]{1-2*(y*y+z*z),2*(x*y+z*w),2*(x*z-y*w),0, 2*(x*y-z*w),1-2*(x*x+z*z),2*(y*z+x*w),0, 2*(x*z+y*w),2*(y*z-x*w),1-2*(x*x+y*y),0,
+            mix(A[12],B[12],t),mix(A[13],B[13],t),mix(A[14],B[14],t),1};
+    }
+    private static float[] quat(float[] m){
+        float m00=m[0],m11=m[5],m22=m[10],tr=m00+m11+m22;float x,y,z,w;
+        if(tr>0){float s=(float)Math.sqrt(tr+1)*2;w=.25f*s;x=(m[6]-m[9])/s;y=(m[8]-m[2])/s;z=(m[1]-m[4])/s;}
+        else if(m00>m11&&m00>m22){float s=(float)Math.sqrt(1+m00-m11-m22)*2;w=(m[6]-m[9])/s;x=.25f*s;y=(m[4]+m[1])/s;z=(m[8]+m[2])/s;}
+        else if(m11>m22){float s=(float)Math.sqrt(1+m11-m00-m22)*2;w=(m[8]-m[2])/s;x=(m[4]+m[1])/s;y=.25f*s;z=(m[9]+m[6])/s;}
+        else{float s=(float)Math.sqrt(1+m22-m00-m11)*2;w=(m[1]-m[4])/s;x=(m[8]+m[2])/s;y=(m[9]+m[6])/s;z=.25f*s;}
+        return new float[]{x,y,z,w};
     }
     private void arm(int s,float[] T,float[] target,float[] pole){
         float[] sh=shoulder(s),el=elbow(s),hc=handCentre(s);float[] shW=M.pt(T,sh);

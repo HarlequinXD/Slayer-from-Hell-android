@@ -32,7 +32,7 @@ final class Game implements GLSurfaceView.Renderer {
         prog=Gfx.program(Shaders.VS_PBR,Shaders.FS_PBR);progDecal=Gfx.program(Shaders.VS_DECAL,Shaders.FS_DECAL);progPart=Gfx.program(Shaders.VS_PART,Shaders.FS_PART);uni.clear();
         java.util.ArrayList<float[]>[] geo=level.build();levelMesh=new Gfx.Mesh[Tex.COUNT];for(int i=0;i<Tex.COUNT;i++)levelMesh[i]=new Gfx.Mesh(geo[i].get(0));
         float[][] g=Gun.build();parts=new Gfx.Mesh[g.length];for(int i=0;i<g.length;i++)parts[i]=g[i]==null?null:new Gfx.Mesh(g[i]);
-        loadBakedGun();loadHero();
+        loadBakedGun();loadHero();loadSaw();
         maskTex=Gfx.maskTexture(level.lightMask,level.W,level.H);
         decalStream=new Gfx.Stream(3,2,1);partStream=new Gfx.Stream(3,2,4);
         for(int i=0;i<Tex.COUNT;i++)tex[i]=null;
@@ -66,6 +66,17 @@ final class Game implements GLSurfaceView.Renderer {
             heroTex=new int[]{asset("hero_a.png",true),asset("hero_b.png",false),asset("hero_c.png",false)};
         }catch(Exception e){throw new RuntimeException("baked hero: "+e);}
     }
+    // ------------------------------------------------------------------ the chainsaw arm (body + a chain loop whose texture scrolls)
+    private Gfx.Mesh sawBody,sawChain;private int[] sawTex,chainTex;private float sawPom,chainScroll;
+    private void loadSaw(){
+        try(java.io.InputStream in=ctx.getAssets().open("chainsaw.bin")){
+            java.nio.ByteBuffer b=java.nio.ByteBuffer.wrap(readAll(in)).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            if(b.getInt()!=0x4e554753)throw new RuntimeException("chainsaw.bin");sawPom=b.getFloat();int groups=b.getInt();
+            for(int g=0;g<groups;g++){int n=b.getInt();float[] v=new float[n*11];for(int i=0;i<v.length;i++)v[i]=b.getFloat();if(g==0)sawBody=new Gfx.Mesh(v);else sawChain=new Gfx.Mesh(v);}
+            sawTex=new int[]{asset("chainsaw_a.png",true),asset("chainsaw_b.png",false),asset("chainsaw_c.png",false)};
+            chainTex=new int[]{asset("chain_a.png",true,true),asset("chain_b.png",false,true),asset("chain_c.png",false,true)};
+        }catch(Exception e){throw new RuntimeException("baked chainsaw: "+e);}
+    }
     /** The warden in her animated pose, then the shotgun in her hands and any shells in the chambers or her hand. */
     private void drawPlayer(){
         for(int k=0;k<3;k++){GLES30.glActiveTexture(GLES30.GL_TEXTURE0+k);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,heroTex[k]);}
@@ -74,13 +85,21 @@ final class Game implements GLSurfaceView.Renderer {
         float[] E=hero.eyeFrame;
         bindGun();model(M.mul(E,gun.mat[Gun.P_ACTION]));gunMesh[0].draw();model(M.mul(E,gun.mat[Gun.P_BARRELS]));gunMesh[1].draw();
         for(int k=0;k<gun.shellCount;k++){model(M.mul(E,gun.shellMats[k]));bindMat(Tex.SHELL,false);parts[Gun.P_HULL].draw();bindMat(Tex.BRASS,false);parts[Gun.P_BASE].draw();}
+        for(int k=0;k<hero.caddyCount;k++){model(hero.caddyMats[k]);bindMat(Tex.SHELL,false);parts[Gun.P_HULL].draw();bindMat(Tex.BRASS,false);parts[Gun.P_BASE].draw();}
+        // the chainsaw: body, then the chain loop with its texture running along the bar
+        model(hero.sawMat);
+        for(int k=0;k<3;k++){GLES30.glActiveTexture(GLES30.GL_TEXTURE0+k);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,sawTex[k]);}
+        GLES30.glUniform1f(u(prog,"uPom"),sawPom);GLES30.glUniform1f(u(prog,"uEmit"),0);sawBody.draw();
+        for(int k=0;k<3;k++){GLES30.glActiveTexture(GLES30.GL_TEXTURE0+k);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,chainTex[k]);}
+        GLES30.glUniform1f(u(prog,"uPom"),0);GLES30.glUniform2f(u(prog,"uUvScroll"),-chainScroll,0);sawChain.draw();GLES30.glUniform2f(u(prog,"uUvScroll"),0,0);
     }
-    private int asset(String name,boolean srgb)throws java.io.IOException{
+    private int asset(String name,boolean srgb)throws java.io.IOException{return asset(name,srgb,false);}
+    private int asset(String name,boolean srgb,boolean repeat)throws java.io.IOException{
         android.graphics.BitmapFactory.Options o=new android.graphics.BitmapFactory.Options();o.inPremultiplied=false;o.inScaled=false;o.inPreferredConfig=android.graphics.Bitmap.Config.ARGB_8888;
         android.graphics.Bitmap bm;try(java.io.InputStream in=ctx.getAssets().open(name)){bm=android.graphics.BitmapFactory.decodeStream(in,null,o);}
         int w=bm.getWidth(),h=bm.getHeight();int[] px=new int[w*h];bm.getPixels(px,0,w,0,0,w,h);bm.recycle();
         if(!name.equals("gun_c.png")&&!bm.hasAlpha()){}
-        return Gfx.texture(px,w,h,srgb,false);
+        return Gfx.texture(px,w,h,srgb,repeat);
     }
     private static byte[] readAll(java.io.InputStream in)throws java.io.IOException{java.io.ByteArrayOutputStream o=new java.io.ByteArrayOutputStream();byte[] b=new byte[65536];int n;while((n=in.read(b))>0)o.write(b,0,n);return o.toByteArray();}
     private void bindGun(){for(int k=0;k<3;k++){GLES30.glActiveTexture(GLES30.GL_TEXTURE0+k);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,gunTex[k]);}
@@ -116,7 +135,8 @@ final class Game implements GLSurfaceView.Renderer {
         if(pl.hurtFlash>.99f&&(int)(time*4)%2==0)sfx.play(Sfx.SIZZLE,.4f);
         gun.update(dt,in.fire,in.takeReload());
         int ev=gun.events;
-        hero.update(dt,time,pl,pl.yaw,pl.viewPitch(),in.fire,gun);
+        hero.update(dt,time,pl,pl.yaw,pl.viewPitch(),in.fire,in.saw,gun);
+        updateSaw(dt);
         if(hero.steps>0&&pl.onGround)sfx.play(Sfx.STEP,.3f+.15f*hero.run,.9f+fx.rng.nextFloat()*.2f);
         updateCamera(dt);
         float[] f=camF,right=camR,up=camU;float[] E=hero.eyeFrame;
@@ -133,14 +153,14 @@ final class Game implements GLSurfaceView.Renderer {
                 float[] d=Model.norm(new float[]{dir[0]+r2[0]*(float)Math.cos(a)*rr+u2[0]*(float)Math.sin(a)*rr,dir[1]+r2[1]*(float)Math.cos(a)*rr+u2[1]*(float)Math.sin(a)*rr,dir[2]+r2[2]*(float)Math.cos(a)*rr+u2[2]*(float)Math.sin(a)*rr});
                 float[] hit=level.ray(mz[0],mz[1],mz[2],d[0],d[1],d[2],70);
                 if(hit!=null){fx.impact(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5],(int)hit[7]);if((int)hit[7]!=Tex.LAVA&&(int)hit[7]!=Tex.LIGHT)fx.hole(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5]);}}
-            float[] gf=Model.norm(M.dir(E,new float[]{1,0,0}));fx.muzzle(mz[0],mz[1],mz[2],gf[0],gf[1],gf[2]);
+            float[] gf=Model.norm(M.dir(M.mul(E,gun.mat[Gun.P_ACTION]),new float[]{1,0,0}));fx.muzzle(mz[0],mz[1],mz[2],gf[0],gf[1],gf[2]);
         }
         if((ev&Gun.EV_OPEN)!=0)sfx.play(Sfx.PUMP_BACK,.8f,.8f);
         if((ev&Gun.EV_CLOSE)!=0)sfx.play(Sfx.PUMP_FWD,.9f,.75f);
         if((ev&Gun.EV_SHELL_IN)!=0)sfx.play(Sfx.SHELL_IN,.7f);
         if((ev&Gun.EV_DRY)!=0)sfx.play(Sfx.DRY,.8f);
         if((ev&Gun.EV_EJECT)!=0){   // the extractors throw the fired cases up and back over her shoulder
-            float[] gf=Model.norm(M.dir(E,new float[]{1,0,0})),gr=Model.norm(M.dir(E,new float[]{0,-1,0})),gu=Model.norm(M.dir(E,new float[]{0,0,1}));
+            float[] gf=Model.norm(M.dir(M.mul(E,gun.mat[Gun.P_ACTION]),new float[]{1,0,0})),gr=Model.norm(M.dir(M.mul(E,gun.mat[Gun.P_ACTION]),new float[]{0,-1,0})),gu=Model.norm(M.dir(M.mul(E,gun.mat[Gun.P_ACTION]),new float[]{0,0,1}));
             float[] back=Model.norm(new float[]{-gf[0]*.85f+gr[0]*.35f,-gf[1]*.85f+gr[1]*.35f,-gf[2]*.85f+gr[2]*.35f});
             for(int b=0;b<2;b++)if(gun.spent[b]){float[] p=M.pt(E,gun.chamberCam[b]);fx.eject(p[0],p[1],p[2],back,gu,gr);}
             gun.clearSpent();}
@@ -154,6 +174,22 @@ final class Game implements GLSurfaceView.Renderer {
         flash=Math.max(0,flash-dt);hint=Math.max(0,hint-dt);
         ammo=gun.ammo();reserve=gun.reserve;health=pl.health;hurt=pl.hurtFlash;reloading=gun.reloading();spread=gun.recoilNow;
     }
+    // ------------------------------------------------------------------ the chainsaw running and cutting
+    private float sawRev,cutTimer,lastGrind;
+    private void updateSaw(float dt){
+        float target=hero.saw>.5f?1:.12f;sawRev+=(target-sawRev)*Math.min(1,dt*(target>sawRev?6:2.5f));
+        chainScroll+=dt*(.2f+sawRev*2.6f);chainScroll-=(float)Math.floor(chainScroll);
+        sfx.engine(.18f+sawRev*.55f,.55f+sawRev*1.25f);
+        // the bar's leading edge biting into walls: sparks, scars and a grind
+        if(hero.saw>.6f){float[] a=M.pt(hero.sawMat,new float[]{.47f,0,0}),b=M.pt(hero.sawMat,new float[]{.97f,0,0});float[] d=Model.sub(b,a);float l=Model.len(d);d=Model.mul(d,1/l);
+            float[] hit=level.ray(a[0],a[1],a[2],d[0],d[1],d[2],l);
+            if(hit!=null){cutTimer-=dt;if(cutTimer<=0){cutTimer=.06f;fx.impact(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5],(int)hit[7]);if(fx.rng.nextFloat()<.3f)fx.hole(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5]);}
+                if(time-lastGrind>.18f){lastGrind=time;sfx.play(Sfx.GRIND,.7f,.9f+fx.rng.nextFloat()*.2f);}pl.kickVel+=dt*3;}}
+        // blue-grey exhaust puffs from the pipes
+        if(fx.rng.nextFloat()<.25f+sawRev*.5f){float[] e=M.pt(hero.sawMat,new float[]{.1f,-.115f,.13f});float[] v=M.dir(hero.sawMat,new float[]{-.4f,-.3f,.2f});
+            fx.spawn(Fx.SMOKE,e[0],e[1],e[2],v[0]+fx.rnd(-.05f,.05f),v[1]+fx.rnd(-.05f,.05f),v[2]+.15f,fx.rnd(.5f,.9f),.012f,.35f,0,1f,.42f,.44f,.48f,.12f+sawRev*.1f);}
+    }
+
     // ------------------------------------------------------------------ third-person camera
     /**
      * Over the right shoulder: a pivot at her head height (smoothed over steps and jumps) offset to the right, the

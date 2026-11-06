@@ -26,8 +26,7 @@ final class Gfx {
     }
     static FloatBuffer floats(float[] a,int n){FloatBuffer b=ByteBuffer.allocateDirect(Math.max(4,n*4)).order(ByteOrder.nativeOrder()).asFloatBuffer();b.put(a,0,n).position(0);return b;}
 
-    private static float maxAniso=-1;
-    /** Uploads an ARGB image as RGBA with mipmaps (sRGB for colour maps), trilinear + anisotropic filtering, repeating. */
+    /** Uploads an ARGB image as RGBA with mipmaps (sRGB for colour maps), point filtering, repeating. */
     static int texture(int[] argb,int w,int h,boolean srgb,boolean repeat){
         ByteBuffer b=ByteBuffer.allocateDirect(w*h*4).order(ByteOrder.nativeOrder());
         for(int c:argb){b.put((byte)(c>>16));b.put((byte)(c>>8));b.put((byte)c);b.put((byte)(c>>>24));}
@@ -36,13 +35,11 @@ final class Gfx {
         GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT,1);
         GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D,0,srgb?GLES30.GL_SRGB8_ALPHA8:GLES30.GL_RGBA8,w,h,0,GLES30.GL_RGBA,GLES30.GL_UNSIGNED_BYTE,b);
         GLES30.glGenerateMipmap(GLES30.GL_TEXTURE_2D);
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D,GLES30.GL_TEXTURE_MIN_FILTER,GLES30.GL_LINEAR_MIPMAP_LINEAR);
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D,GLES30.GL_TEXTURE_MAG_FILTER,GLES30.GL_LINEAR);
+        // point sampling everywhere (nearest texel, nearest mip level): crisp retro texels
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D,GLES30.GL_TEXTURE_MIN_FILTER,GLES30.GL_NEAREST_MIPMAP_NEAREST);
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D,GLES30.GL_TEXTURE_MAG_FILTER,GLES30.GL_NEAREST);
         int wrap=repeat?GLES30.GL_REPEAT:GLES30.GL_CLAMP_TO_EDGE;
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D,GLES30.GL_TEXTURE_WRAP_S,wrap);GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D,GLES30.GL_TEXTURE_WRAP_T,wrap);
-        if(maxAniso<0){String ext=GLES30.glGetString(GLES30.GL_EXTENSIONS);maxAniso=0;
-            if(ext!=null&&ext.contains("texture_filter_anisotropic")){float[] m=new float[1];GLES30.glGetFloatv(0x84FF,m,0);maxAniso=m[0];}}
-        if(maxAniso>1)GLES30.glTexParameterf(GLES30.GL_TEXTURE_2D,0x84FE,Math.min(8,maxAniso));
         return t[0];
     }
     /** Nearest-filtered RG8 texture (the level's light visibility masks). */

@@ -17,10 +17,7 @@ public final class MainActivity extends Activity {
         if(android.os.Build.VERSION.SDK_INT>=28)getWindow().getAttributes().layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         game=new Game(this);sfx=new Sfx(this);game.sfx=sfx;
         Hud hud=new Hud(this,game);game.hud=hud;
-        gl=new GLSurfaceView(this){
-            /** Render at 75% of the screen's resolution (the compositor scales it up): PBR + parallax at a steady frame rate. */
-            @Override protected void onSizeChanged(int w,int h,int ow,int oh){super.onSizeChanged(w,h,ow,oh);getHolder().setFixedSize(Math.max(1,(int)(w*.75f)),Math.max(1,(int)(h*.75f)));}
-        };
+        gl=new GLSurfaceView(this);   // full-resolution surface: Game renders at 270 lines and point-scales up itself
         gl.setEGLContextClientVersion(3);gl.setEGLConfigChooser(8,8,8,8,24,0);gl.setPreserveEGLContextOnPause(true);
         gl.setRenderer(game);gl.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
         FrameLayout root=new FrameLayout(this);root.addView(gl);root.addView(hud);setContentView(root);

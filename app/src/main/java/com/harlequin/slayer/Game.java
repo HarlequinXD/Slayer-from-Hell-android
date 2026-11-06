@@ -25,7 +25,10 @@ final class Game implements GLSurfaceView.Renderer {
     private final int[][] tex=new int[Tex.COUNT][];
     private static volatile Tex.Mat[] mats;private static final AtomicInteger made=new AtomicInteger();
     private Gfx.Stream decalStream,partStream;
-    private int W=1,H=1;private long last;private float time,flash;private int frames;private long fpsStart;
+    /** Render resolution: 270 lines tall (the RPG Pocket Editor's default), width from the screen's shape; the frame is
+     *  drawn into an offscreen buffer and scaled up to the screen with point sampling for crisp, chunky pixels. */
+    static final int RENDER_LINES=270;
+    private int W=1,H=1,SW=1,SH=1,fbo,fboColor,fboDepth;private long last;private float time,flash;private int frames;private long fpsStart;
     private float[] decalBuf=new float[Fx.MAXD*6*6],partBuf=new float[Fx.MAXP*6*9];
 
     @Override public void onSurfaceCreated(GL10 unused,EGLConfig cfg){
@@ -42,7 +45,18 @@ final class Game implements GLSurfaceView.Renderer {
         GLES30.glEnable(GLES30.GL_DEPTH_TEST);GLES30.glDepthFunc(GLES30.GL_LEQUAL);GLES30.glDisable(GLES30.GL_CULL_FACE);
         last=System.nanoTime();
     }
-    @Override public void onSurfaceChanged(GL10 unused,int w,int h){W=Math.max(1,w);H=Math.max(1,h);GLES30.glViewport(0,0,W,H);}
+    @Override public void onSurfaceChanged(GL10 unused,int w,int h){
+        SW=Math.max(1,w);SH=Math.max(1,h);H=Math.min(SH,RENDER_LINES);W=Math.max(1,Math.round(H*SW/(float)SH));
+        int[] t=new int[2];
+        if(fbo!=0){GLES30.glDeleteFramebuffers(1,new int[]{fbo},0);GLES30.glDeleteRenderbuffers(2,new int[]{fboColor,fboDepth},0);}
+        GLES30.glGenFramebuffers(1,t,0);fbo=t[0];GLES30.glGenRenderbuffers(2,t,0);fboColor=t[0];fboDepth=t[1];
+        GLES30.glBindRenderbuffer(GLES30.GL_RENDERBUFFER,fboColor);GLES30.glRenderbufferStorage(GLES30.GL_RENDERBUFFER,GLES30.GL_RGBA8,W,H);
+        GLES30.glBindRenderbuffer(GLES30.GL_RENDERBUFFER,fboDepth);GLES30.glRenderbufferStorage(GLES30.GL_RENDERBUFFER,GLES30.GL_DEPTH_COMPONENT24,W,H);
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER,fbo);
+        GLES30.glFramebufferRenderbuffer(GLES30.GL_FRAMEBUFFER,GLES30.GL_COLOR_ATTACHMENT0,GLES30.GL_RENDERBUFFER,fboColor);
+        GLES30.glFramebufferRenderbuffer(GLES30.GL_FRAMEBUFFER,GLES30.GL_DEPTH_ATTACHMENT,GLES30.GL_RENDERBUFFER,fboDepth);
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER,0);GLES30.glViewport(0,0,SW,SH);
+    }
 
     // ------------------------------------------------------------------ the baked double barrel
     private Gfx.Mesh[] gunMesh=new Gfx.Mesh[2];private int[] gunTex;private float gunPom;
@@ -113,7 +127,12 @@ final class Game implements GLSurfaceView.Renderer {
         if(!texturesReady()){GLES30.glClearColor(.07f,.02f,.015f,1);GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT|GLES30.GL_DEPTH_BUFFER_BIT);return;}
         loading=null;
         update(dt);
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER,fbo);
         render();
+        // scale the low-resolution frame up to the screen with point sampling
+        GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER,fbo);GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER,0);
+        GLES30.glBlitFramebuffer(0,0,W,H,0,0,SW,SH,GLES30.GL_COLOR_BUFFER_BIT,GLES30.GL_NEAREST);
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER,0);
     }
     /** Uploads finished materials (two per frame) and reports progress; true when everything is on the GPU. */
     private boolean texturesReady(){

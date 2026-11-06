@@ -2,6 +2,7 @@
 
 A first-person shooter test scene in the style of Quake/Doom, written from scratch in Java with OpenGL ES 3.0.
 
+* **Retro resolution, point-sampled**: the scene renders at 270 lines tall (the same as RPG Pocket Editor's default; width follows the screen's shape) into an offscreen buffer that is scaled up to the screen with nearest-neighbour sampling. Every texture is point-filtered (nearest texel, nearest mip level).
 * **PBR rendering**: GGX/Smith/Schlick shading of albedo, normal, height, ambient-occlusion, roughness, metalness and emission maps, ACES tone mapping, fog.
 * **Parallax occlusion mapping**: an adaptive ray march through each material's height map with binary-search refinement, plus soft self-shadows toward the nearest lights.
 * **Procedural materials**: every texture is generated at start-up (hell brick, riveted metal panels, cracked floor tiles, diamond plate, concrete, crates, light panels, carved pillars, flowing lava, gunmetal, walnut, leather, fabric, brass, shell hulls).

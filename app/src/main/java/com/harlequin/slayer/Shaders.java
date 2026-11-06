@@ -24,7 +24,7 @@ final class Shaders {
         "#version 300 es\n"+
         "precision highp float;precision highp int;\n"+
         "uniform sampler2D uA;uniform sampler2D uB;uniform sampler2D uC;uniform sampler2D uMask;\n"+
-        "uniform vec3 uCam;uniform float uPom;uniform float uEmit;uniform float uTime;uniform float uExposure;\n"+
+        "uniform vec3 uCam;uniform float uPom;uniform float uEmit;uniform float uEnvK;uniform float uTime;uniform float uExposure;\n"+
         "uniform vec4 uL[16];uniform vec3 uLC[16];uniform int uLCount;uniform ivec2 uGrid;\n"+
         "uniform vec3 uSky;uniform vec3 uGround;uniform vec4 uFog;uniform float uPulse;uniform float uShadowK;\n"+
         "in vec3 vPos;in vec3 vN;in vec3 vT;in vec2 vUv;out vec4 fragColor;\n"+
@@ -73,7 +73,7 @@ final class Shaders {
         "  vec3 spec=D*G*F/(4.0*NdV*NdL+1e-4);vec3 kd=(1.0-F)*(1.0-metal);\n"+
         "  Lo+=(kd*albedo/PI+spec)*uLC[i]*fall*NdL*sh;}\n"+
         // ---- ambient: sky/ground hemisphere, rough reflection of it, occlusion
-        " vec3 hemi=mix(uGround,uSky,Nw.z*0.5+0.5);vec3 R=reflect(-V,Nw);vec3 env=mix(uGround,uSky,R.z*0.5+0.5);\n"+
+        " vec3 hemi=mix(uGround,uSky,Nw.z*0.5+0.5);vec3 R=reflect(-V,Nw);vec3 env=mix(uGround,uSky,R.z*0.5+0.5)*uEnvK+(uEnvK-1.0)*(vec3(0.06,0.03,0.018)*pow(1.0-abs(R.z),6.0)+vec3(0.05,0.022,0.01)*max(-R.z,0.0)+vec3(0.02,0.021,0.024)*max(R.z,0.0));\n"+
         " vec3 Fr=F0+(max(vec3(1.0-rough),F0)-F0)*pow(1.0-NdV,5.0);\n"+
         " vec3 amb=hemi*albedo*(1.0-metal)+env*Fr*(1.0-rough*0.7);\n"+
         " float cav=mix(1.0,0.55,surfDepth);\n"+

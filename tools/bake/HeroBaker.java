@@ -9,7 +9,7 @@ import javax.imageio.ImageIO;
 /**
  * Offline high-to-low bake for the warden, an original armoured heroine (run on a desktop; results go into assets).
  *
- * 1. HIGH POLY: a part-based signed distance field with millimetre detail: a charcoal undersuit; bone-white ceramic
+ * 1. HIGH POLY: a part-based signed distance field with millimetre detail: a charcoal undersuit; polished steel
  *    plates (shaped breastplate, segmented abdomen, back plate with spine ridge, tassets, layered pauldrons, rerebraces,
  *    ribbed vambraces, cuisses, greaves, sabatons) with panel grooves and rivets; dark steel trim (gorget, elbow and
  *    knee cops, plate edges); a crested helmet with cheek guards and a glowing amber visor slit; a long braid; leather
@@ -273,13 +273,16 @@ public class HeroBaker {
         float r,g,b,rough,metal,emit=0;
         switch(m){
             case M_SUIT:{float n=fbm(x*300,y*300,z*300,3);float weave=((int)(x*900+z*900)&1)==0?.03f:0;r=.035f+n*.02f+weave*.3f;g=.036f+n*.02f+weave*.3f;b=.04f+n*.022f+weave*.3f;rough=.72f;metal=0;break;}
-            case M_ARMOR:{   // bone-white ceramic, grime in the seams, soot, chipped edges show dark under-layer
-                float n=fbm(x*40,y*40,z*40,4),soot=smooth(.58f,.82f,fbm(x*9+2,y*9,z*9,5)),chip=smooth(.6f,.95f,lap*.0012f+fbm(x*120,y*120,z*120,3)*.5f);
-                r=.56f-n*.06f;g=.52f-n*.06f;b=.44f-n*.05f;
-                r=mix(r,.12f,cav*.8f);g=mix(g,.1f,cav*.8f);b=mix(b,.08f,cav*.8f);
-                r=mix(r,.05f,soot*.7f);g=mix(g,.045f,soot*.7f);b=mix(b,.04f,soot*.7f);
-                r=mix(r,.07f,chip);g=mix(g,.07f,chip);b=mix(b,.075f,chip);
-                rough=.42f+n*.15f+soot*.25f;metal=chip*.6f;break;}
+            case M_ARMOR:{   // polished silver-steel plate: fine brushing, scratches, soot and grime in the seams, worn-bright edges
+                float n=fbm(x*40,y*40,z*40,4),soot=smooth(.6f,.85f,fbm(x*9+2,y*9,z*9,5)),edge=smooth(.6f,.95f,lap*.0012f+fbm(x*120,y*120,z*120,3)*.4f);
+                float brush=noise(x*900,y*900,z*30),scr=noise(x*20+z*300,y*300,z*20)>.94f?1:0;
+                r=.8f-n*.06f;g=.78f-n*.06f;b=.74f-n*.05f;
+                float k=.94f+brush*.08f;r*=k;g*=k;b*=k;
+                r=mix(r,.3f,soot*.6f);g=mix(g,.28f,soot*.6f);b=mix(b,.26f,soot*.6f);
+                r=mix(r,.92f,edge*.6f);g=mix(g,.91f,edge*.6f);b=mix(b,.9f,edge*.6f);
+                rough=.16f+n*.08f+brush*.05f+soot*.3f+scr*.18f-edge*.06f;metal=1;
+                if(cav>.25f){float c=smooth(.25f,.6f,cav);r=mix(r,.05f,c);g=mix(g,.045f,c);b=mix(b,.04f,c);rough=mix(rough,.8f,c);metal=mix(metal,0,c);}
+                break;}
             case M_TRIM:{float n=fbm(x*200,y*200,z*200,3);float wear=smooth(.55f,.9f,lap*.0012f+n*.4f);r=mix(.06f,.4f,wear);g=mix(.06f,.38f,wear);b=mix(.065f,.36f,wear);rough=.35f+n*.15f;metal=1;break;}
             case M_CLOTH:{float n=fbm(x*80,y*80,z*120,4);float th=((int)(y*1200)&1)==0?.04f:0;r=.32f+n*.08f+th;g=.03f+n*.015f;b=.03f+n*.015f;rough=.85f;metal=0;break;}
             case M_LEATHER:{float n=fbm(x*150,y*150,z*150,4);r=.11f+n*.05f;g=.065f+n*.03f;b=.04f+n*.02f;rough=.62f+n*.15f;metal=0;break;}

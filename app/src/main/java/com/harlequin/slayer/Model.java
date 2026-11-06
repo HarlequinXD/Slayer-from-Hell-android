@@ -16,6 +16,8 @@ final class Model {
     static float[] cross(float[] a,float[] b){return v(a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]);}
     static float dot(float[] a,float[] b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
     static float[] norm(float[] a){float l=(float)Math.sqrt(dot(a,a));return l<1e-9f?v(0,0,1):v(a[0]/l,a[1]/l,a[2]/l);}
+    static float len(float[] a){return (float)Math.sqrt(dot(a,a));}
+    static float[] mul(float[] a,float s){return v(a[0]*s,a[1]*s,a[2]*s);}
 
     /** Triangle with explicit normals (null = flat) and uvs; the tangent follows the uv's u direction. */
     void tri(float[] a,float[] b,float[] c,float[] ua,float[] ub,float[] uc,float[] na,float[] nb,float[] nc){

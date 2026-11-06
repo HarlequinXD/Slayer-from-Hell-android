@@ -1,13 +1,13 @@
 package com.harlequin.slayer;
 
 /**
- * Quake-style first-person controller: ground friction and acceleration, low air control that still allows
+ * Quake-style character controller (third person; the camera follows her): ground friction and acceleration, low air control that still allows
  * strafe-jumping, gravity and jumping, stepping up stairs and ledges, snapping down stairs, ceiling bumps,
  * head bob, landing dip and recoil kick. Lava hurts; dying respawns you. Pure Java.
  */
 final class Player {
     static final float RADIUS=.3f,HEIGHT=1.75f,EYE=1.62f;
-    static final float MAX_SPEED=7f,ACCEL=12f,AIR_ACCEL=10f,AIR_CAP=.9f,FRICTION=6f,STOP_SPEED=1.5f,GRAVITY=18f,JUMP=6.3f;
+    static final float MAX_SPEED=4.3f,WALK_SPEED=1.45f,ACCEL=10f,AIR_ACCEL=8f,AIR_CAP=.9f,FRICTION=7f,STOP_SPEED=1.5f,GRAVITY=18f,JUMP=5.4f;
     float x,y,z,vx,vy,vz,yaw,pitch;boolean onGround;
     float health=100;float hurtFlash;
     float bobPhase,bobAmt,landDip,landVel,stepSmooth,kick,kickVel,roll;
@@ -18,11 +18,12 @@ final class Player {
 
     void update(float dt,Level L,float moveX,float moveY,float lookDX,float lookDY,boolean jump,float sens){
         justLanded=justJumped=stepped=false;
-        yaw-=lookDX*sens;pitch-=lookDY*sens;pitch=Math.max(-1.53f,Math.min(1.53f,pitch));
+        yaw-=lookDX*sens;pitch-=lookDY*sens;pitch=Math.max(-1.1f,Math.min(1.2f,pitch));
         float cy=(float)Math.cos(yaw),sy=(float)Math.sin(yaw);
         // wish direction: stick up = forward, right = strafe right (y is north, +yaw turns left)
         float wx=cy*moveY+sy*moveX,wy=sy*moveY-cy*moveX;float wl=(float)Math.hypot(wx,wy);
-        float wishSpeed=Math.min(1,wl)*MAX_SPEED;if(wl>1e-4f){wx/=wl;wy/=wl;}
+        float m=Math.min(1,wl);   // a light push walks, pushing the stick out runs
+        float wishSpeed=m<.7f?WALK_SPEED*m/.7f:WALK_SPEED+(MAX_SPEED-WALK_SPEED)*(m-.7f)/.3f;if(wl>1e-4f){wx/=wl;wy/=wl;}
         if(onGround){
             float sp=(float)Math.hypot(vx,vy);
             if(sp>0){float drop=Math.max(sp,STOP_SPEED)*FRICTION*dt;float ns=Math.max(0,sp-drop)/sp;vx*=ns;vy*=ns;}

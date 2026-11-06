@@ -436,13 +436,13 @@ public class HeroBaker {
             float cy=s*.235f;
             piece(sidePart(s,S_PAULDRON),line(v(-.005f,cy,1.355f),v(-.005f,cy,1.555f),.01f,.15f,.3f,.45f,.6f,.75f,.88f),12,.25f,true,true);
             float[] sh=shoulder(s),el=elbow(s),wr=wrist(s),hp=hip(s),kn=knee(s),an=ankle(s),to=toe(s);
-            piece(sidePart(s,S_UPPER),line(sh,el,.12f,.4f,.7f,.95f),8,.16f,false,false);
+            piece(sidePart(s,S_UPPER),line(sh,el,.06f,.4f,.7f,.97f),8,.16f,true,true);
             float[] fa=norm(sub(wr,el));
             piece(sidePart(s,S_FORE),line(el,wr,-.25f,0,.2f,.45f,.7f,.92f,1),9,.16f,true,false);
             float[] hc=add(wr,fa,.055f);
             piece(sidePart(s,S_HAND),line(add(hc,fa,-.06f),add(hc,fa,.06f),0,.35f,.7f,1),8,.15f,true,true);
-            piece(sidePart(s,S_THIGH),line(hp,kn,0,.25f,.5f,.75f,.92f,1.04f),10,.2f,false,false);
-            piece(sidePart(s,S_SHIN),line(kn,an,0,.12f,.35f,.6f,.85f,1.05f),9,.18f,false,false);
+            piece(sidePart(s,S_THIGH),line(hp,kn,0,.25f,.5f,.75f,.92f,1.04f),10,.2f,false,true);
+            piece(sidePart(s,S_SHIN),line(kn,an,-.04f,.12f,.35f,.6f,.85f,1.05f),9,.18f,true,false);
             float[] heel=v(an[0]-.075f,an[1],.06f),tipF=v(to[0]+.03f,to[1],.04f);
             piece(sidePart(s,S_FOOT),line(heel,tipF,0,.15f,.35f,.55f,.75f,.95f),8,.22f,true,true);
         }
@@ -554,14 +554,21 @@ public class HeroBaker {
             c.setRGB(x,y,(b8(RO[i])<<16)|(b8(ME[i])<<8)|b8(EM[i]));}
         ImageIO.write(a,"png",new File(dir,"hero_a.png"));ImageIO.write(b,"png",new File(dir,"hero_b.png"));ImageIO.write(c,"png",new File(dir,"hero_c.png"));
     }
-    /** hero.bin: same layout as gun.bin: magic, pom scale, group count (1), vertex count, 11 floats per vertex. */
+    /**
+     * hero.bin: same layout as gun.bin: magic, pom scale, group count, then per group a vertex count and 11 floats per
+     * vertex. One group per body part (part ids as above) so the game can pose them as a rigid-segment rig; the glaive's
+     * parts are written empty (she carries the shotgun in the game).
+     */
+    static boolean SKIP_GLAIVE=true;
     static int writeMesh(File f)throws Exception{
-        ArrayList<float[]> g=new ArrayList<>();for(Chart c:charts)for(int[] t:c.tris)for(int k:t)g.add(c.verts.get(k));
-        ByteBuffer bb=ByteBuffer.allocate(16+g.size()*44).order(ByteOrder.LITTLE_ENDIAN);
-        bb.putInt(0x4e554753);bb.putFloat(2*RANGE*texelsPerMetre/AW);bb.putInt(1);bb.putInt(g.size());
-        for(float[] q:g)for(int j=0;j<11;j++)bb.putFloat(q[j]);
+        ArrayList<float[]>[] g=new ArrayList[PARTS];for(int i=0;i<PARTS;i++)g[i]=new ArrayList<>();int total=0;
+        for(Chart c:charts){if(SKIP_GLAIVE&&(c.group==P_GLAIVE_SHAFT||c.group==P_GLAIVE_HEAD))continue;for(int[] t:c.tris)for(int k:t)g[c.group].add(c.verts.get(k));}
+        int n=0;for(ArrayList<float[]> l:g)n+=l.size();
+        ByteBuffer bb=ByteBuffer.allocate(12+PARTS*4+n*44).order(ByteOrder.LITTLE_ENDIAN);
+        bb.putInt(0x4e554753);bb.putFloat(2*RANGE*texelsPerMetre/AW);bb.putInt(PARTS);
+        for(ArrayList<float[]> l:g){bb.putInt(l.size());total+=l.size()/3;for(float[] q:l)for(int j=0;j<11;j++)bb.putFloat(q[j]);}
         try(FileOutputStream out=new FileOutputStream(f)){out.write(bb.array(),0,bb.position());}
-        return g.size()/3;
+        return total;
     }
     // ================================================================== high poly mesh (surface nets, narrow band)
     static long meshHigh(int g,float h,File obj)throws Exception{

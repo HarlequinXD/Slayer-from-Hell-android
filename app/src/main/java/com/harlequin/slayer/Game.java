@@ -9,14 +9,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
-/** The game: update loop and OpenGL ES 3 rendering of the level, effects and the first-person shotgun. */
+/** The game: update loop, the third-person camera, and OpenGL ES 3 rendering of the level, effects, the warden and her shotgun. */
 final class Game implements GLSurfaceView.Renderer {
     private final Context ctx;Hud hud;Sfx sfx;
-    final Level level=new Level();final Player pl=new Player();final Gun gun=new Gun();final Fx fx=new Fx();
+    final Level level=new Level();final Player pl=new Player();final Gun gun=new Gun();final Fx fx=new Fx();final Hero hero=new Hero();
     // HUD state (read by the UI thread)
     volatile String loading="Forging materials…";volatile float progress;volatile int ammo,reserve,fps;volatile float health=100,hurt,spread,hint=6;volatile boolean reloading;
 
-    Game(Context c){ctx=c;pl.spawn(level);}
+    Game(Context c){ctx=c;pl.spawn(level);hero.bodyYaw=pl.yaw;}
 
     // ------------------------------------------------------------------ GL resources
     private int prog,progDecal,progPart;
@@ -55,25 +55,25 @@ final class Game implements GLSurfaceView.Renderer {
             gunTex=new int[]{asset("gun_a.png",true),asset("gun_b.png",false),asset("gun_c.png",false)};
         }catch(Exception e){throw new RuntimeException("baked gun: "+e);}
     }
-    // ------------------------------------------------------------------ the warden (baked showcase figure in the start room)
-    private Gfx.Mesh heroMesh;private int[] heroTex;private float heroPom;
+    // ------------------------------------------------------------------ the warden (player model: one mesh per body part)
+    private Gfx.Mesh[] heroParts;private int[] heroTex;private float heroPom;
     private void loadHero(){
         try(java.io.InputStream in=ctx.getAssets().open("hero.bin")){
             java.nio.ByteBuffer b=java.nio.ByteBuffer.wrap(readAll(in)).order(java.nio.ByteOrder.LITTLE_ENDIAN);
-            if(b.getInt()!=0x4e554753)throw new RuntimeException("hero.bin");heroPom=b.getFloat();b.getInt();
-            int n=b.getInt();float[] v=new float[n*11];for(int i=0;i<v.length;i++)v[i]=b.getFloat();heroMesh=new Gfx.Mesh(v);
+            if(b.getInt()!=0x4e554753)throw new RuntimeException("hero.bin");heroPom=b.getFloat();int groups=b.getInt();
+            heroParts=new Gfx.Mesh[groups];
+            for(int g=0;g<groups;g++){int n=b.getInt();if(n==0)continue;float[] v=new float[n*11];for(int i=0;i<v.length;i++)v[i]=b.getFloat();heroParts[g]=new Gfx.Mesh(v);}
             heroTex=new int[]{asset("hero_a.png",true),asset("hero_b.png",false),asset("hero_c.png",false)};
         }catch(Exception e){throw new RuntimeException("baked hero: "+e);}
     }
-    /** She stands a few metres ahead of the spawn point, turned to face it, with her visor and blade glowing. */
-    private void drawHero(){
-        float hx=level.spawnX+4.6f,hy=level.spawnY+.9f,hz=level.floorUnder(hx,hy,.3f);
-        float yaw=(float)Math.atan2(level.spawnY-hy,level.spawnX-hx);
-        float breathe=1+.006f*(float)Math.sin(time*1.6f);
-        model(M.mul(M.tr(hx,hy,hz),M.mul(M.rz(yaw),M.scale(1,1,breathe))));
+    /** The warden in her animated pose, then the shotgun in her hands and any shells in the chambers or her hand. */
+    private void drawPlayer(){
         for(int k=0;k<3;k++){GLES30.glActiveTexture(GLES30.GL_TEXTURE0+k);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,heroTex[k]);}
-        GLES30.glUniform1f(u(prog,"uPom"),heroPom*.35f);GLES30.glUniform1f(u(prog,"uEmit"),4f);GLES30.glUniform1f(u(prog,"uPulse"),1);
-        heroMesh.draw();GLES30.glUniform1f(u(prog,"uPulse"),0);
+        GLES30.glUniform1f(u(prog,"uPom"),heroPom*.35f);GLES30.glUniform1f(u(prog,"uEmit"),4f);
+        for(int p=0;p<heroParts.length&&p<Hero.PARTS;p++){if(heroParts[p]==null||hero.mat[p]==null)continue;model(hero.mat[p]);heroParts[p].draw();}
+        float[] E=hero.eyeFrame;
+        bindGun();model(M.mul(E,gun.mat[Gun.P_ACTION]));gunMesh[0].draw();model(M.mul(E,gun.mat[Gun.P_BARRELS]));gunMesh[1].draw();
+        for(int k=0;k<gun.shellCount;k++){model(M.mul(E,gun.shellMats[k]));bindMat(Tex.SHELL,false);parts[Gun.P_HULL].draw();bindMat(Tex.BRASS,false);parts[Gun.P_BASE].draw();}
     }
     private int asset(String name,boolean srgb)throws java.io.IOException{
         android.graphics.BitmapFactory.Options o=new android.graphics.BitmapFactory.Options();o.inPremultiplied=false;o.inScaled=false;o.inPreferredConfig=android.graphics.Bitmap.Config.ARGB_8888;
@@ -113,33 +113,39 @@ final class Game implements GLSurfaceView.Renderer {
         pl.update(dt,level,in.moveX,in.moveY,look[0],look[1],jump,.0055f);
         if(pl.justJumped)sfx.play(Sfx.JUMP,.5f);
         if(pl.justLanded)sfx.play(Sfx.LAND,Math.min(1,pl.landSpeed/12));
-        if(pl.stepCount!=lastStep){lastStep=pl.stepCount;sfx.play(Sfx.STEP,.35f,.9f+fx.rng.nextFloat()*.2f);}
         if(pl.hurtFlash>.99f&&(int)(time*4)%2==0)sfx.play(Sfx.SIZZLE,.4f);
         gun.update(dt,in.fire,in.takeReload());
         int ev=gun.events;
-        float[] f=pl.forward(),right=Model.norm(Model.cross(f,new float[]{0,0,1})),up=Model.cross(right,f);
-        float[] eye={pl.x,pl.y,pl.eyeZ()};
-        float[] cam=camMatrix(eye,f,right,up);
+        hero.update(dt,time,pl,pl.yaw,pl.viewPitch(),in.fire,gun);
+        if(hero.steps>0&&pl.onGround)sfx.play(Sfx.STEP,.3f+.15f*hero.run,.9f+fx.rng.nextFloat()*.2f);
+        updateCamera(dt);
+        float[] f=camF,right=camR,up=camU;float[] E=hero.eyeFrame;
         if((ev&Gun.EV_FIRE)!=0){
-            sfx.play(Sfx.BLAST,1f);flash=.07f;pl.kickVel+=4.2f;
+            sfx.play(Sfx.BLAST,1f);flash=.07f;pl.kickVel+=1.6f;
+            // the crosshair picks the aim point; the pellets leave the muzzle toward it
+            float[] mz=M.pt(E,gun.muzzleCam);
+            float[] aimHit=level.ray(camPos[0],camPos[1],camPos[2],f[0],f[1],f[2],80);
+            float[] aimPt=aimHit!=null?new float[]{aimHit[0],aimHit[1],aimHit[2]}:Model.add(camPos,f,80);
+            float[] dir=Model.norm(Model.sub(aimPt,mz));if(Model.dot(dir,f)<.3f)dir=f;
+            float[] r2=Model.norm(Model.cross(dir,new float[]{0,0,1})),u2=Model.cross(r2,dir);
             for(int k=0;k<9;k++){   // nine buckshot pellets in a cone
                 float a=fx.rng.nextFloat()*6.2832f,rr=(float)Math.sqrt(fx.rng.nextFloat())*.05f;
-                float[] d=Model.norm(new float[]{f[0]+right[0]*(float)Math.cos(a)*rr+up[0]*(float)Math.sin(a)*rr,f[1]+right[1]*(float)Math.cos(a)*rr+up[1]*(float)Math.sin(a)*rr,f[2]+right[2]*(float)Math.cos(a)*rr+up[2]*(float)Math.sin(a)*rr});
-                float[] hit=level.ray(eye[0],eye[1],eye[2],d[0],d[1],d[2],70);
+                float[] d=Model.norm(new float[]{dir[0]+r2[0]*(float)Math.cos(a)*rr+u2[0]*(float)Math.sin(a)*rr,dir[1]+r2[1]*(float)Math.cos(a)*rr+u2[1]*(float)Math.sin(a)*rr,dir[2]+r2[2]*(float)Math.cos(a)*rr+u2[2]*(float)Math.sin(a)*rr});
+                float[] hit=level.ray(mz[0],mz[1],mz[2],d[0],d[1],d[2],70);
                 if(hit!=null){fx.impact(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5],(int)hit[7]);if((int)hit[7]!=Tex.LAVA&&(int)hit[7]!=Tex.LIGHT)fx.hole(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5]);}}
+            float[] gf=Model.norm(M.dir(E,new float[]{1,0,0}));fx.muzzle(mz[0],mz[1],mz[2],gf[0],gf[1],gf[2]);
         }
         if((ev&Gun.EV_OPEN)!=0)sfx.play(Sfx.PUMP_BACK,.8f,.8f);
         if((ev&Gun.EV_CLOSE)!=0)sfx.play(Sfx.PUMP_FWD,.9f,.75f);
         if((ev&Gun.EV_SHELL_IN)!=0)sfx.play(Sfx.SHELL_IN,.7f);
         if((ev&Gun.EV_DRY)!=0)sfx.play(Sfx.DRY,.8f);
-        gun.pose(pl.bobPhase,pl.bobAmt,look[0],look[1],time,dt);
-        if((ev&Gun.EV_FIRE)!=0){float[] mz=M.pt(cam,gun.muzzleCam);fx.muzzle(mz[0],mz[1],mz[2],f[0],f[1],f[2]);}
-        if((ev&Gun.EV_EJECT)!=0){   // the extractors throw the fired cases up and back over the shoulder
-            float[] back=Model.norm(new float[]{-f[0]*.85f+right[0]*.35f,-f[1]*.85f+right[1]*.35f,-f[2]*.85f+right[2]*.35f});
-            for(int b=0;b<2;b++)if(gun.spent[b]){float[] p=M.pt(cam,gun.chamberCam[b]);fx.eject(p[0],p[1],p[2],back,up,right);}
+        if((ev&Gun.EV_EJECT)!=0){   // the extractors throw the fired cases up and back over her shoulder
+            float[] gf=Model.norm(M.dir(E,new float[]{1,0,0})),gr=Model.norm(M.dir(E,new float[]{0,-1,0})),gu=Model.norm(M.dir(E,new float[]{0,0,1}));
+            float[] back=Model.norm(new float[]{-gf[0]*.85f+gr[0]*.35f,-gf[1]*.85f+gr[1]*.35f,-gf[2]*.85f+gr[2]*.35f});
+            for(int b=0;b<2;b++)if(gun.spent[b]){float[] p=M.pt(E,gun.chamberCam[b]);fx.eject(p[0],p[1],p[2],back,gu,gr);}
             gun.clearSpent();}
         // barrel smoke for a moment after each shot
-        if(gun.state==Gun.FIRE&&gun.t<1.2f&&fx.rng.nextFloat()<.35f){float[] mz=M.pt(cam,gun.muzzleCam);fx.spawn(Fx.SMOKE,mz[0],mz[1],mz[2],fx.rnd(-.05f,.05f),fx.rnd(-.05f,.05f),fx.rnd(.15f,.35f),fx.rnd(.8f,1.4f),.025f,.6f,0,1f,.5f,.48f,.46f,.25f);}
+        if(gun.state==Gun.FIRE&&gun.t<1.2f&&fx.rng.nextFloat()<.35f){float[] mz=M.pt(hero.eyeFrame,gun.muzzleCam);fx.spawn(Fx.SMOKE,mz[0],mz[1],mz[2],fx.rnd(-.05f,.05f),fx.rnd(-.05f,.05f),fx.rnd(.15f,.35f),fx.rnd(.8f,1.4f),.025f,.6f,0,1f,.5f,.48f,.46f,.25f);}
         // embers rising from the lava
         for(int k=0;k<2;k++){float ex=pl.x+fx.rnd(-12,12),ey=pl.y+fx.rnd(-12,12);Level.Cell c=level.atF(ex,ey);
             if(!c.solid&&c.floorMat==Tex.LAVA)fx.spawn(Fx.ADD,ex,ey,c.floor+.05f,fx.rnd(-.2f,.2f),fx.rnd(-.2f,.2f),fx.rnd(.6f,1.6f),fx.rnd(1.2f,2.6f),fx.rnd(.012f,.025f),-.2f,.1f,.2f,1f,.4f,.08f,1);}
@@ -148,28 +154,46 @@ final class Game implements GLSurfaceView.Renderer {
         flash=Math.max(0,flash-dt);hint=Math.max(0,hint-dt);
         ammo=gun.ammo();reserve=gun.reserve;health=pl.health;hurt=pl.hurtFlash;reloading=gun.reloading();spread=gun.recoilNow;
     }
-    /** Camera-space (x forward, y left, z up) to world, with the view roll applied to the up vector. */
-    private float[] camMatrix(float[] eye,float[] f,float[] right,float[] up){
-        float c=(float)Math.cos(pl.roll),s=(float)Math.sin(pl.roll);float[] upR={up[0]*c+right[0]*s,up[1]*c+right[1]*s,up[2]*c+right[2]*s};
-        float[] left=Model.cross(upR,f);
-        return M.basis(eye,f,left,upR);
+    // ------------------------------------------------------------------ third-person camera
+    /**
+     * Over the right shoulder: a pivot at her head height (smoothed over steps and jumps) offset to the right, the
+     * camera pulled back along the view direction. It moves in closer and tighter while she aims, and never goes
+     * through walls: rays from her head to the shoulder pivot and from the pivot back to the camera pull it in
+     * instantly and let it ease back out.
+     */
+    private float[] camPos={0,0,0},camF={1,0,0},camR={0,-1,0},camU={0,0,1};private float camDist=2.6f,camPZ=Float.NaN,camSide=.45f,camFov=64;
+    private void updateCamera(float dt){
+        float p=pl.viewPitch(),cy=(float)Math.cos(pl.yaw),sy=(float)Math.sin(pl.yaw),cp=(float)Math.cos(p);
+        camF=new float[]{cy*cp,sy*cp,(float)Math.sin(p)};camR=Model.norm(Model.cross(camF,new float[]{0,0,1}));camU=Model.cross(camR,camF);
+        float headZ=pl.z+1.6f-.06f*hero.run;
+        camPZ=Float.isNaN(camPZ)?headZ:camPZ+(headZ-camPZ)*Math.min(1,dt*(pl.onGround?14:6));
+        float[] head={pl.x,pl.y,camPZ};float[] rh={sy,-cy,0};
+        float side=Hero.mix(.42f,.5f,hero.aim);
+        float[] hs=level.ray(head[0],head[1],head[2],rh[0],rh[1],0,side+.25f);if(hs!=null)side=Math.max(0,hs[6]-.25f);
+        camSide+=(side-camSide)*Math.min(1,dt*(side<camSide?30:5));
+        float[] pivot=Model.add(head,rh,camSide);pivot[2]+=.05f;
+        float want=Hero.mix(2.7f,1.65f,hero.aim)+.25f*hero.run;
+        float[] back=Model.mul(camF,-1);
+        float[] hit=level.ray(pivot[0],pivot[1],pivot[2],back[0],back[1],back[2],want+.3f);
+        float d=hit!=null?Math.max(.25f,hit[6]-.3f):want;
+        camDist=d<camDist?d:camDist+(d-camDist)*Math.min(1,dt*4);
+        camPos=Model.add(pivot,back,camDist);
+        camFov+=(Hero.mix(64,54,hero.aim)+4*hero.run-camFov)*Math.min(1,dt*8);
     }
 
     // ------------------------------------------------------------------ render
     private final float[] lights=new float[16*4],lightCol=new float[16*3];
     private void render(){
-        float[] f=pl.forward(),right=Model.norm(Model.cross(f,new float[]{0,0,1})),up=Model.cross(right,f);
-        float[] eye={pl.x,pl.y,pl.eyeZ()};float[] cam=camMatrix(eye,f,right,up);float[] upR={cam[8],cam[9],cam[10]};
+        float[] f=camF,right=camR,upR=camU;float[] eye=camPos;
         float[] view=M.lookAt(eye,f,upR);float aspect=W/(float)H;
-        float[] vp=M.mul(M.perspective((float)Math.toRadians(66),aspect,.05f,120f),view);
-        float[] vpGun=M.mul(M.perspective((float)Math.toRadians(54),aspect,.012f,10f),view);
+        float[] vp=M.mul(M.perspective((float)Math.toRadians(camFov),aspect,.05f,120f),view);
         GLES30.glViewport(0,0,W,H);GLES30.glClearColor(.02f,.01f,.008f,1);GLES30.glDepthMask(true);GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT|GLES30.GL_DEPTH_BUFFER_BIT);
         // lights: the level's, flickering over lava, plus the muzzle flash in the last slot
         int n=Math.min(15,level.lights.size());
         for(int i=0;i<16;i++){
             if(i<n){Level.Light L=level.lights.get(i);float k=L.flicker?.75f+.25f*(float)Math.sin(time*7.3f+i*1.7f)*(float)Math.sin(time*3.1f+i):1;
                 lights[i*4]=L.x;lights[i*4+1]=L.y;lights[i*4+2]=L.z;lights[i*4+3]=L.radius;lightCol[i*3]=L.r*k;lightCol[i*3+1]=L.g*k;lightCol[i*3+2]=L.b*k;}
-            else if(i==15&&flash>0){float[] mz=M.pt(cam,gun.muzzleCam);float k=flash/.07f;lights[60]=mz[0]+f[0]*.3f;lights[61]=mz[1]+f[1]*.3f;lights[62]=mz[2]+f[2]*.3f;lights[63]=11;lightCol[45]=9*k;lightCol[46]=5.5f*k;lightCol[47]=2.2f*k;}
+            else if(i==15&&flash>0){float[] mz=M.pt(hero.eyeFrame,gun.muzzleCam);float k=flash/.07f;lights[60]=mz[0]+f[0]*.3f;lights[61]=mz[1]+f[1]*.3f;lights[62]=mz[2]+f[2]*.3f;lights[63]=11;lightCol[45]=9*k;lightCol[46]=5.5f*k;lightCol[47]=2.2f*k;}
             else{lights[i*4+3]=0;lightCol[i*3]=lightCol[i*3+1]=lightCol[i*3+2]=0;}}
         GLES30.glUseProgram(prog);
         GLES30.glUniform4fv(u(prog,"uL"),16,lights,0);GLES30.glUniform3fv(u(prog,"uLC"),16,lightCol,0);GLES30.glUniform1i(u(prog,"uLCount"),16);
@@ -184,19 +208,12 @@ final class Game implements GLSurfaceView.Renderer {
             GLES30.glUniform2f(u(prog,"uUvScroll"),m==Tex.LAVA?time*.012f:0,m==Tex.LAVA?time*.007f:0);GLES30.glUniform1f(u(prog,"uPulse"),m==Tex.LAVA?1:0);
             levelMesh[m].draw();}
         GLES30.glUniform2f(u(prog,"uUvScroll"),0,0);GLES30.glUniform1f(u(prog,"uPulse"),0);
-        drawHero();
+        drawPlayer();
         // spent shells lying around
         for(Fx.Shell s:fx.shells){float[] Mx=M.mul(M.tr(s.x,s.y,s.z),M.mul(M.rz(s.yaw),M.mul(M.ry(s.pitch),M.rx(s.roll))));model(Mx);
             bindMat(Tex.SHELL,false);parts[Gun.P_HULL].draw();bindMat(Tex.BRASS,false);parts[Gun.P_BASE].draw();}
         drawDecals(vp,eye);
         drawParticles(vp,right,upR);
-        // first-person shotgun and hands on top
-        GLES30.glClear(GLES30.GL_DEPTH_BUFFER_BIT);GLES30.glUseProgram(prog);GLES30.glUniformMatrix4fv(u(prog,"uVP"),1,false,vpGun,0);
-        for(int p=0;p<Gun.PARTS;p++){if(!gun.visible[p])continue;float[] Mx=M.mul(cam,gun.mat[p]);model(Mx);
-            if(Gun.PART_MAT[p]<0){bindGun();gunMesh[p==Gun.P_ACTION?0:1].draw();continue;}
-            bindMat(Gun.PART_MAT[p],false);parts[p].draw();
-            if(p==Gun.P_SLEEVE||p==Gun.P_CUFF){model(M.mul(cam,gun.leftArm));parts[p].draw();}}
-        for(int k=0;k<gun.shellCount;k++){model(M.mul(cam,gun.shellMats[k]));bindMat(Tex.SHELL,false);parts[Gun.P_HULL].draw();bindMat(Tex.BRASS,false);parts[Gun.P_BASE].draw();}
         GLES30.glBindVertexArray(0);
     }
     private void model(float[] m){GLES30.glUniformMatrix4fv(u(prog,"uModel"),1,false,m,0);GLES30.glUniformMatrix3fv(u(prog,"uNrmM"),1,false,M.nrm(m),0);}

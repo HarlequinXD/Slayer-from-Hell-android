@@ -74,7 +74,7 @@ public class HeroBaker {
 
     // ================================================================== the high poly sculpt: an armoured warden
     // x forward (she faces +x), y to her left, z up, metres; feet on z = 0, about 1.8 m tall (2.25 m with the glaive).
-    static final int M_SUIT=0,M_ARMOR=1,M_TRIM=2,M_CLOTH=3,M_LEATHER=4,M_VISOR=5,M_HAIR=6,M_OBSIDIAN=7,M_RUBBER=8;
+    static final int M_SUIT=0,M_ARMOR=1,M_TRIM=2,M_CLOTH=3,M_LEATHER=4,M_VISOR=5,M_HAIR=6,M_OBSIDIAN=7,M_RUBBER=8,M_HOOF=9;
     static float ell(float x,float y,float z,float cx,float cy,float cz,float rx,float ry,float rz){
         float px=(x-cx)/rx,py=(y-cy)/ry,pz=(z-cz)/rz;float k0=(float)Math.sqrt(px*px+py*py+pz*pz);
         float k1=(float)Math.sqrt(px*px/(rx*rx)+py*py/(ry*ry)+pz*pz/(rz*rz));return k1<1e-9f?-Math.min(rx,Math.min(ry,rz)):k0*(k0-1)/k1;
@@ -91,10 +91,12 @@ public class HeroBaker {
         float cu=Math.round(u/spacing)*spacing;float dd=(float)Math.hypot(u-cu,v);return dd<r?d-h*(float)Math.sqrt(1-(dd/r)*(dd/r)):d;
     }
     // skeleton landmarks (s = +1 left, -1 right)
-    static float[] hip(int s){return v(0,s*.095f,.95f);}
-    static float[] knee(int s){return v(.025f,s*.12f,.52f);}
-    static float[] ankle(int s){return v(-.005f,s*.14f,.088f);}
-    static float[] toe(int s){return v(.2f,s*.155f,.035f);}
+    // digitigrade legs: hip, knee (forward), hock (back), fetlock ("ankle", the pivot of the cannon and hoof), hoof tip
+    static float[] hip(int s){return v(0,s*.105f,.95f);}
+    static float[] knee(int s){return v(.1f,s*.125f,.6f);}
+    static float[] hock(int s){return v(-.1f,s*.14f,.25f);}
+    static float[] ankle(int s){return v(-.035f,s*.145f,.075f);}
+    static float[] toe(int s){return v(.04f,s*.145f,0);}
     static float[] shoulder(int s){return v(0,s*.205f,1.45f);}
     static float[] elbow(int s){return s<0?v(-.03f,-.27f,1.19f):v(-.04f,.265f,1.18f);}
     static float[] wrist(int s){return s<0?v(.06f,-.3f,.985f):v(-.01f,.29f,.95f);}
@@ -127,14 +129,15 @@ public class HeroBaker {
     static float torso(float x,float y,float z,int[] mat){
         float bd=bound(x,y,z,-.2f,.2f,-.26f,.26f,.78f,1.58f);if(bd>.02f){mat[0]=M_ARMOR;return bd;}
         // the body underneath (charcoal suit)
-        float body=ell(x,y,z,0,0,1.0f,.115f,.165f,.115f);
+        float body=ell(x,y,z,0,0,1.0f,.122f,.19f,.12f);
+        for(int s=-1;s<=1;s+=2)body=smin(body,ell(x,y,z,-.06f,s*.082f,.895f,.098f,.092f,.105f),.045f);   // fuller glutes
         body=smin(body,ell(x,y,z,0,0,1.13f,.092f,.118f,.09f),.05f);
-        body=smin(body,ell(x,y,z,0,0,1.3f,.115f,.16f,.135f),.06f);
+        body=smin(body,ell(x,y,z,0,0,1.3f,.125f,.165f,.135f),.06f);
         body=smin(body,ell(x,y,z,-.01f,0,1.42f,.1f,.195f,.075f),.05f);
         float d=body;int m=M_SUIT;
         // breastplate: the chest shell with a shaped bust, panel lines, a centre ridge
-        float chest=smin(ell(x,y,z,.0f,0,1.335f,.112f,.168f,.15f),Math.min(ell(x,y,z,.058f,.062f,1.29f,.062f,.058f,.05f),ell(x,y,z,.058f,-.062f,1.29f,.062f,.058f,.05f)),.04f)-.01f;
-        chest=Math.max(chest,1.215f-z);chest=Math.max(chest,z-1.46f);
+        float chest=smin(ell(x,y,z,.0f,0,1.335f,.112f,.168f,.15f),Math.min(ell(x,y,z,.07f,.068f,1.285f,.078f,.07f,.064f),ell(x,y,z,.07f,-.068f,1.285f,.078f,.07f,.064f)),.04f)-.01f;   // a fuller bust
+        chest=Math.max(chest,1.205f-z);chest=Math.max(chest,z-1.46f);
         chest=groove(chest,y,.004f,.003f*(x>0?1:0));chest=groove(chest,z-1.24f,.003f,.0025f);chest=groove(chest,z-1.43f,.003f,.0025f);
         chest=groove(chest,(float)Math.hypot(y,0)-.12f,.003f,.002f);
         if(chest<d){d=chest;m=M_ARMOR;}
@@ -148,12 +151,15 @@ public class HeroBaker {
         // collar / gorget base, steel trim at the plate edges
         float collar=ell(x,y,z,-.005f,0,1.455f,.095f,.13f,.03f)-.004f;if(collar<d){d=collar;m=M_TRIM;}
         // belt with buckle and side pouches, tassets over the hips, crimson sash at the front
-        float belt=ell(x,y,z,0,0,1.0f,.123f,.172f,.03f);belt=Math.max(belt,Math.abs(z-1.005f)-.024f);if(belt<d){d=belt;m=M_LEATHER;}
-        float buckle=box(x,y,z,.122f,0,1.005f,.008f,.026f,.022f,.003f);if(buckle<d){d=buckle;m=M_TRIM;}
-        for(int s=-1;s<=1;s+=2){float pouch=box(x,y,z,.03f,s*.16f,.975f,.035f,.022f,.03f,.006f);if(pouch<d){d=pouch;m=M_LEATHER;}
-            float tas=box(x,y,z,.045f,s*.115f,.918f,.06f,.062f,.05f,.008f);float cut=ell(x,y,z,0,s*.095f,.83f,.1f,.08f,.1f);tas=Math.max(tas,-cut+.004f);
-            tas=groove(tas,z-.92f,.003f,.002f);tas=rivets(tas,y,z-.95f,.03f,.004f,.0025f);if(tas<d){d=tas;m=M_ARMOR;}}
-        float sash=box(x,y,z,.118f,0,.935f,.006f,.055f,.068f,.004f);sash+=(float)Math.sin(z*90)*.0015f;if(sash<d){d=sash;m=M_CLOTH;}
+        float belt=ell(x,y,z,0,0,1.0f,.13f,.198f,.03f);belt=Math.max(belt,Math.abs(z-1.005f)-.024f);if(belt<d){d=belt;m=M_LEATHER;}
+        float buckle=box(x,y,z,.129f,0,1.005f,.008f,.026f,.022f,.003f);if(buckle<d){d=buckle;m=M_TRIM;}
+        for(int s=-1;s<=1;s+=2){float pouch=box(x,y,z,.03f,s*.188f,.975f,.035f,.022f,.03f,.006f);if(pouch<d){d=pouch;m=M_LEATHER;}
+            float tas=box(x,y,z,.05f,s*.13f,.918f,.06f,.066f,.05f,.008f);float cut=ell(x,y,z,0,s*.105f,.83f,.1f,.08f,.1f);tas=Math.max(tas,-cut+.004f);
+            tas=groove(tas,z-.92f,.003f,.002f);tas=rivets(tas,y,z-.95f,.03f,.004f,.0025f);if(tas<d){d=tas;m=M_ARMOR;}
+            // culet plates curving over the glutes
+            float cul=ell(x,y,z,-.062f,s*.084f,.9f,.106f,.1f,.112f)-.004f;cul=Math.max(cul,Math.max(.885f-z,x+.03f));cul=Math.max(cul,-(ell(x,y,z,-.06f,s*.082f,.895f,.098f,.092f,.105f))-.002f);
+            cul=groove(cul,z-.94f,.003f,.002f);cul=rivets(cul,y-s*.084f,z-.975f,.03f,.004f,.0025f);if(cul<d){d=cul;m=M_ARMOR;}}
+        float sash=box(x,y,z,.125f,0,.935f,.006f,.055f,.068f,.004f);sash+=(float)Math.sin(z*90)*.0015f;if(sash<d){d=sash;m=M_CLOTH;}
         mat[0]=m;return d;
     }
     static float head(float x,float y,float z,int[] mat){
@@ -222,30 +228,57 @@ public class HeroBaker {
         float thumb=cone(x,y,z,add(c,v(.02f,-s*.03f,.02f),1),add(c,v(.045f,-s*.01f,.005f),1),.014f,.011f);fist=smin(fist,thumb,.008f);
         mat[0]=Math.abs(x-c[0]-.03f)<.02f&&z>c[2]?M_TRIM:M_LEATHER;return fist;
     }
+    /** Unit vector perpendicular to a->b in the x-z plane, pointing forward (+x side). */
+    static float[] fwdPerp(float[] a,float[] b){float[] d=norm(sub(b,a));float[] f=sub(v(1,0,0),mul(d,d[0]));return norm(f);}
+    static float tOn(float x,float y,float z,float[] a,float[] b){float[] d=sub(b,a);float l2=dot(d,d);return clamp(((x-a[0])*d[0]+(y-a[1])*d[1]+(z-a[2])*d[2])/l2,0,1);}
+    static float side(float x,float y,float z,float[] a,float[] b,float[] n){float t=tOn(x,y,z,a,b);float[] c=add(a,sub(b,a),t);return (x-c[0])*n[0]+(y-c[1])*n[1]+(z-c[2])*n[2];}
     static float thigh(int s,float x,float y,float z,int[] mat){
-        float[] a=hip(s),b=knee(s);float bd=bound(x,y,z,-.12f,.14f,Math.min(a[1],b[1])-.12f,Math.max(a[1],b[1])+.12f,b[2]-.07f,a[2]+.08f);if(bd>.02f){mat[0]=M_SUIT;return bd;}
-        float d=cone(x,y,z,a,b,.088f,.06f);int m=M_SUIT;
-        float cuisse=cone(x,y,z,add(a,v(.012f,0,-.06f),1),add(b,v(.006f,0,.05f),1),.092f,.066f);cuisse=Math.max(cuisse,-(x-.0f)+.005f);
-        cuisse=groove(cuisse,y-mix(a[1],b[1],(a[2]-z)/(a[2]-b[2])),.003f,.002f);if(cuisse<d){d=cuisse;m=M_ARMOR;}
-        float kn=ell(x,y,z,b[0]+.04f,b[1],b[2],.04f,.06f,.06f);kn=groove(kn,z-b[2],.003f,.002f);kn=rivets(kn,y-b[1],z-b[2]+.03f,.04f,.005f,.003f);if(kn<d){d=kn;m=M_TRIM;}
+        float[] a=hip(s),b=knee(s);float bd=bound(x,y,z,-.14f,.2f,Math.min(a[1],b[1])-.14f,Math.max(a[1],b[1])+.14f,b[2]-.08f,a[2]+.1f);if(bd>.02f){mat[0]=M_SUIT;return bd;}
+        float[] a2=add(a,v(-.015f,0,.03f),1),fw=fwdPerp(a,b);
+        float d=cone(x,y,z,a2,b,.112f,.066f);
+        float[] mc=add(add(a,sub(b,a),.36f),v(.012f,s*.012f,0),1);d=smin(d,ell(x,y,z,mc[0],mc[1],mc[2],.098f,.1f,.12f),.045f);   // full, muscular thigh
+        int m=M_SUIT;
+        // cuisse: a curved plate over the front and outside of the thigh
+        float cuisse=smin(cone(x,y,z,add(a2,v(0,0,-.06f),1),add(b,fw,.008f),.12f,.074f),ell(x,y,z,mc[0],mc[1],mc[2],.108f,.11f,.128f),.045f);
+        cuisse=Math.max(cuisse,-side(x,y,z,a,b,fw)-.01f);cuisse=Math.max(cuisse,b[2]+.05f-z);cuisse=Math.max(cuisse,z-a[2]+.04f);
+        float tt=tOn(x,y,z,a,b);cuisse=groove(cuisse,((tt*5.5f)%1f-.5f)*.06f,.003f,.002f);cuisse=rivets(cuisse,y-b[1],z-mix(a[2],b[2],.45f),.035f,.004f,.0025f);
+        if(cuisse<d){d=cuisse;m=M_ARMOR;}
+        float[] kc=add(b,fw,.045f);float kn=ell(x,y,z,kc[0],kc[1],kc[2],.045f,.062f,.06f);kn=groove(kn,z-b[2],.003f,.002f);kn=rivets(kn,y-b[1],z-b[2]+.03f,.04f,.005f,.003f);if(kn<d){d=kn;m=M_TRIM;}
+        float spur=cone(x,y,z,add(kc,v(0,0,.03f),1),add(kc,v(.06f,0,.07f),1),.016f,.002f);if(spur<d){d=spur;m=M_TRIM;}
         mat[0]=m;return d;
     }
+    /** The calf: knee down and back to the hock, a thick muscle under a greave. */
     static float shin(int s,float x,float y,float z,int[] mat){
-        float[] a=knee(s),b=ankle(s);float bd=bound(x,y,z,-.1f,.12f,Math.min(a[1],b[1])-.1f,Math.max(a[1],b[1])+.1f,b[2]-.05f,a[2]+.03f);if(bd>.02f){mat[0]=M_SUIT;return bd;}
-        float d=cone(x,y,z,a,b,.058f,.043f);int m=M_SUIT;
-        float greave=cone(x,y,z,add(a,v(.008f,0,-.06f),1),add(b,v(.004f,0,.04f),1),.064f,.05f);greave=Math.max(greave,-(x+.005f));
-        float ridge=Math.abs(y-mix(a[1],b[1],(a[2]-z)/(a[2]-b[2])));greave-=(1-smooth(0,.012f,ridge))*.004f;
+        float[] a=knee(s),b=hock(s);float bd=bound(x,y,z,-.2f,.18f,Math.min(a[1],b[1])-.12f,Math.max(a[1],b[1])+.12f,b[2]-.07f,a[2]+.06f);if(bd>.02f){mat[0]=M_SUIT;return bd;}
+        float[] fw=fwdPerp(a,b),post=mul(fw,-1);
+        float d=cone(x,y,z,a,b,.07f,.046f);
+        float[] c0=add(add(a,sub(b,a),.08f),post,.022f),c1=add(add(a,sub(b,a),.62f),post,.012f);
+        d=smin(d,cone(x,y,z,c0,c1,.078f,.044f),.03f);   // the calf muscle bulges behind
+        int m=M_SUIT;
+        float greave=cone(x,y,z,add(a,sub(b,a),.04f),add(b,sub(a,b),.08f),.079f,.054f);greave=smin(greave,cone(x,y,z,c0,c1,.086f,.052f),.03f);
+        greave=Math.max(greave,-side(x,y,z,a,b,fw)-.025f);
+        float tt=tOn(x,y,z,a,b);greave=groove(greave,((tt*6f)%1f-.5f)*.07f,.003f,.0025f);
+        float ridge=Math.abs(y-mix(a[1],b[1],tt));greave-=(1-smooth(0,.012f,ridge))*.004f;
         if(greave<d){d=greave;m=M_ARMOR;}
+        float ring=ell(x,y,z,b[0],b[1],b[2],.052f,.058f,.052f);ring=groove(ring,side(x,y,z,a,b,fw),.003f,.002f);if(ring<d){d=ring;m=M_TRIM;}
+        for(int k=0;k<2;k++){float[] sp=add(a,sub(b,a),.3f+.3f*k);sp=add(sp,post,.06f-.012f*k);   // spines down the back of the calf
+            float spn=cone(x,y,z,sp,add(sp,v(-.05f,0,.025f),1),.012f,.002f);if(spn<d){d=spn;m=M_TRIM;}}
+        float spur=cone(x,y,z,add(b,v(-.03f,0,0),1),add(b,v(-.1f,0,.035f),1),.017f,.002f);if(spur<d){d=spur;m=M_TRIM;}
         mat[0]=m;return d;
     }
+    /** Cannon and hoof: a slim segmented shank from the hock to the fetlock, then a cloven hoof. */
     static float foot(int s,float x,float y,float z,int[] mat){
-        float[] a=ankle(s),t=toe(s);float bd=bound(x,y,z,-.09f,.26f,a[1]-.09f,a[1]+.09f,-.01f,.16f);if(bd>.02f){mat[0]=M_ARMOR;return bd;}
-        float u=clamp((x-a[0]+.06f)/(t[0]-a[0]+.06f),0,1);float hw=mix(.05f,.04f,u),hh=mix(.065f,.03f,u*u);
-        float boot=box(x,y,z,(a[0]-.06f+t[0])*.5f,mix(a[1],t[1],u),hh+.0f,(t[0]-a[0]+.06f)*.5f,hw,hh,.018f);
-        boot=smin(boot,cone(x,y,z,a,add(a,v(0,0,.07f),1),.05f,.048f),.02f);
-        float plates=((x-a[0])/.035f)%1f;if(u>.35f)boot+=Math.abs(plates-.5f)>.43f?.0025f:0;
-        int m=z<.016f?M_RUBBER:(u>.35f&&z>.03f?M_ARMOR:M_TRIM);
-        mat[0]=m;return boot;
+        float[] a=hock(s),b=ankle(s);float bd=bound(x,y,z,-.16f,.1f,b[1]-.09f,b[1]+.09f,-.01f,a[2]+.05f);if(bd>.02f){mat[0]=M_ARMOR;return bd;}
+        float d=cone(x,y,z,a,b,.042f,.03f);int m=M_ARMOR;
+        float tt=tOn(x,y,z,a,b);float band=(tt*5f)%1f;d+=Math.abs(band-.5f)>.4f?.004f:0;   // chitin-like segments
+        d=groove(d,side(x,y,z,a,b,fwdPerp(a,b)),.003f,.0015f);
+        float ring=ell(x,y,z,b[0],b[1],b[2]+.005f,.04f,.044f,.032f);if(ring<d){d=ring;m=M_TRIM;}
+        // the hoof: a flared horn shell from the coronet to a flat sole, split down the front
+        float hoof=cone(x,y,z,v(b[0]+.008f,b[1],.062f),v(b[0]+.03f,b[1],.008f),.034f,.052f);hoof=Math.max(hoof,-z);hoof=Math.max(hoof,x-(b[0]+.085f));
+        float slit=Math.max(Math.max(Math.abs(y-b[1])-.004f,(b[0]+.02f)-x),z-.058f);hoof=Math.max(hoof,-slit);
+        hoof+=(float)Math.sin(z*420)*.0006f;   // growth rings
+        if(hoof<d){d=hoof;m=M_HOOF;}
+        mat[0]=m;return d;
     }
     static float shaft(float x,float y,float z,int[] mat){
         float bd=bound(x,y,z,GX-.05f,GX+.05f,GY-.05f,GY+.05f,-.02f,1.82f);if(bd>.02f){mat[0]=M_TRIM;return bd;}
@@ -291,6 +324,7 @@ public class HeroBaker {
             case M_OBSIDIAN:{   // black volcanic glass with molten cracks that glow
                 float[] c=cells(y*60+x*20,z*28,x*30);float crack=1-smooth(0,.12f,c[1]-c[0]);float n=fbm(x*90,y*90,z*90,3);
                 r=mix(.02f,1f,crack);g=mix(.018f,.4f,crack);b=mix(.022f,.06f,crack);rough=mix(.12f+n*.1f,.5f,crack);metal=0;emit=crack;break;}
+            case M_HOOF:{float n=fbm(x*120,y*120,z*400,3);float wear=smooth(.55f,.9f,lap*.0012f+n*.3f);r=mix(.022f,.09f,wear)+n*.01f;g=mix(.02f,.085f,wear)+n*.01f;b=mix(.02f,.08f,wear)+n*.01f;rough=.32f+n*.12f;metal=0;break;}
             case M_RUBBER:{float n=fbm(x*200,y*200,z*200,3);r=g=b=.02f+n*.01f;rough=.9f;metal=0;break;}
             default:{r=g=b=.5f;rough=.5f;metal=0;}
         }
@@ -427,7 +461,7 @@ public class HeroBaker {
     static void buildLow(){
         // torso: hips to collar, a vertical axis
         // the torso in two pieces split at the lumbar joint (z = 1.12, under the abdomen plates) so the spine can bend
-        piece(P_PELVIS,line(v(0,0,.866f),v(0,0,1.125f),0,.2f,.37f,.55f,.72f,.86f,1),16,.36f,true,false);
+        piece(P_PELVIS,line(v(0,0,.78f),v(0,0,1.125f),0,.1f,.22f,.36f,.5f,.64f,.78f,.9f,1),16,.36f,true,false);
         piece(P_TORSO,line(v(0,0,1.105f),v(0,0,1.49f),0,.14f,.28f,.42f,.55f,.68f,.8f,.9f,1),16,.36f,false,true);
         // helmet and neck
         piece(P_HEAD,line(v(0,0,1.475f),v(0,0,1.805f),0,.13f,.23f,.33f,.43f,.53f,.63f,.73f,.83f,.92f,1),14,.3f,false,true);
@@ -440,16 +474,15 @@ public class HeroBaker {
         for(int s=-1;s<=1;s+=2){
             float cy=s*.235f;
             piece(sidePart(s,S_PAULDRON),line(v(-.005f,cy,1.355f),v(-.005f,cy,1.555f),.01f,.15f,.3f,.45f,.6f,.75f,.88f),12,.25f,true,true);
-            float[] sh=shoulder(s),el=elbow(s),wr=wrist(s),hp=hip(s),kn=knee(s),an=ankle(s),to=toe(s);
+            float[] sh=shoulder(s),el=elbow(s),wr=wrist(s),hp=hip(s),kn=knee(s),hk=hock(s),an=ankle(s);
             piece(sidePart(s,S_UPPER),line(sh,el,.06f,.4f,.7f,.97f),8,.16f,true,true);
             float[] fa=norm(sub(wr,el));
             piece(sidePart(s,S_FORE),line(el,wr,-.25f,0,.2f,.45f,.7f,.92f,1),9,.16f,true,false);
             float[] hc=add(wr,fa,.055f);
             piece(sidePart(s,S_HAND),line(add(hc,fa,-.06f),add(hc,fa,.06f),0,.35f,.7f,1),8,.15f,true,true);
-            piece(sidePart(s,S_THIGH),line(hp,kn,0,.25f,.5f,.75f,.92f,1.04f),10,.2f,false,true);
-            piece(sidePart(s,S_SHIN),line(kn,an,-.04f,.12f,.35f,.6f,.85f,1.05f),9,.18f,true,false);
-            float[] heel=v(an[0]-.075f,an[1],.06f),tipF=v(to[0]+.03f,to[1],.04f);
-            piece(sidePart(s,S_FOOT),line(heel,tipF,0,.15f,.35f,.55f,.75f,.95f),8,.22f,true,true);
+            piece(sidePart(s,S_THIGH),line(add(hp,v(-.015f,0,.03f),1),kn,0,.18f,.36f,.54f,.72f,.88f,1.04f),12,.26f,false,true);
+            piece(sidePart(s,S_SHIN),line(kn,hk,-.06f,.1f,.25f,.4f,.55f,.7f,.85f,1.06f),10,.24f,true,true);
+            piece(sidePart(s,S_FOOT),line(add(hk,v(0,0,.02f),1),v(an[0]+.025f,an[1],-.002f),0,.2f,.4f,.6f,.72f,.8f,.88f,.95f,1),9,.2f,true,true);
         }
     }
     // ================================================================== packing

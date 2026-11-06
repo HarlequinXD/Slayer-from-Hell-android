@@ -25,10 +25,13 @@ final class Hero {
     static final int S_PAULDRON=0,S_UPPER=1,S_FORE=2,S_HAND=3,S_THIGH=4,S_SHIN=5,S_FOOT=6,PER_SIDE=7,P_PELVIS=P_FIRST_SIDE+2*PER_SIDE,PARTS=P_PELVIS+1;
     static int sidePart(int s,int k){return P_FIRST_SIDE+(s>0?0:PER_SIDE)+k;}
     // bind-pose landmarks (s = +1 left, -1 right)
-    static float[] hip(int s){return v(0,s*.095f,.95f);}
-    static float[] knee(int s){return v(.025f,s*.12f,.52f);}
-    static float[] ankle(int s){return v(-.005f,s*.14f,.088f);}
-    static float[] toe(int s){return v(.2f,s*.155f,.035f);}
+    // digitigrade legs: thigh (hip to knee), calf (knee back to the hock), then the cannon and hoof as one rigid
+    // piece hinged at the fetlock ("ankle", .075 m above the sole)
+    static float[] hip(int s){return v(0,s*.105f,.95f);}
+    static float[] knee(int s){return v(.1f,s*.125f,.6f);}
+    static float[] hock(int s){return v(-.1f,s*.14f,.25f);}
+    static float[] ankle(int s){return v(-.035f,s*.145f,.075f);}
+    static final float HOOF_PITCH=.6f;   // hooves roll less than a human foot
     static float[] shoulder(int s){return v(0,s*.205f,1.45f);}
     static float[] elbow(int s){return s<0?v(-.03f,-.27f,1.19f):v(-.04f,.265f,1.18f);}
     static float[] wrist(int s){return s<0?v(.06f,-.3f,.985f):v(-.01f,.29f,.95f);}
@@ -124,7 +127,7 @@ final class Hero {
         float[] Hf=M.mul(M.tr(root[0],root[1],root[2]),M.rz(hipsYaw));      // ground frame under the hips
         float feetYaw=wrap(hipsYaw+wrap(stanceYaw-hipsYaw)*(1-gaitAmp));
         float[] Ff=M.mul(M.tr(root[0],root[1],root[2]),M.rz(feetYaw));      // where idle feet stand (turns with the shuffle)
-        float[][] tgt=new float[2][],pole=new float[2][];float[] pitchF=new float[2];
+        float[][] tgt=new float[2][],pole=new float[2][],hockT=new float[2][];float[] pitchF=new float[2],fyF=new float[2];
         for(int si=0;si<2;si++){int s=si==0?1:-1;
             float p=phase+(s>0?.5f:0);p-=(float)Math.floor(p);
             float off,lift=0,pitch;boolean swing;
@@ -150,6 +153,7 @@ final class Hero {
             float w=1-gaitAmp;tw=v(mix(tw[0],iw[0],w*(1-air)),mix(tw[1],iw[1],w*(1-air)),tw[2]);
             // the floor under this foot: planted feet keep theirs; swinging feet ease to the next one
             float fl=level.floorUnder(tw[0],tw[1],.06f);if(fl<-50)fl=pl.z;
+            {float hx=(float)Math.cos(hipsYaw)*.085f,hy=(float)Math.sin(hipsYaw)*.085f;float f2=level.floorUnder(tw[0]+hx,tw[1]+hy,.06f);if(f2>-50)fl=Math.max(fl,f2);}   // the hoof reaches ahead of the fetlock
             if(Float.isNaN(footFloor[si]))footFloor[si]=fl;
             if(fl>footFloor[si])footFloor[si]=swing||air>.5f?approach(footFloor[si],fl,30,dt):fl;   // never through a step: rise at once when planted, quickly when swinging
             if(fl>footFloor[si]+.03f&&swing)footFloor[si]=fl-.03f;
@@ -157,7 +161,9 @@ final class Hero {
             float floorRel=footFloor[si]-root[2];
             if(swing&&fl>footFloor[si]+.02f)lift+=Math.min(.3f,fl-footFloor[si])*1.1f;     // lift the swinging foot over a step up
             tw[2]=root[2]+an[2]+lift+(air>.5f?0:floorRel)*(1-air);
-            tgt[si]=tw;pitchF[si]=pitch+fShift*0;
+            tgt[si]=tw;pitchF[si]=pitch*HOOF_PITCH;
+            fyF[si]=wrap(feetYaw+(hipsYaw-feetYaw)*gaitAmp)+s*.07f;
+            hockT[si]=Model.add(tw,M.dir(M.mul(M.rz(fyF[si]),M.ry(pitchF[si])),Model.sub(hock(s),an)),1);
             float[] fwd=M.dir(Hf,v(1,0,0));pole[si]=Model.norm(Model.add(fwd,M.dir(Hf,v(0,s,0)),.08f));
         }
 
@@ -172,8 +178,8 @@ final class Hero {
         float[] P0=M.mul(Hf,M.mul(M.tr(back*bnx-.04f*accLean,lat+back*bny,dz),pivot(PELVIS,M.mul(M.rz(pTwist),M.rx(pRoll)))));
         // drop the pelvis so both legs reach their floors (stairs, slopes, a foot on a step)
         float need=0;
-        for(int si=0;si<2;si++){int s=si==0?1:-1;float[] hw=M.pt(P0,hip(s));float L=(Model.len(Model.sub(knee(s),hip(s)))+Model.len(Model.sub(ankle(s),knee(s))))*.985f;
-            float ddx=tgt[si][0]-hw[0],ddy=tgt[si][1]-hw[1],ddz=tgt[si][2]-hw[2];float h2=ddx*ddx+ddy*ddy;
+        for(int si=0;si<2;si++){int s=si==0?1:-1;float[] hw=M.pt(P0,hip(s));float L=(Model.len(Model.sub(knee(s),hip(s)))+Model.len(Model.sub(hock(s),knee(s))))*.985f;
+            float ddx=hockT[si][0]-hw[0],ddy=hockT[si][1]-hw[1],ddz=hockT[si][2]-hw[2];float h2=ddx*ddx+ddy*ddy;
             if(h2+ddz*ddz>L*L&&ddz<0){float z=-(float)Math.sqrt(Math.max(0,L*L-h2));need=Math.max(need,z-ddz);}}
         pelvisDrop=approach(pelvisDrop,Math.min(.35f,need),need>pelvisDrop?25:8,dt);
         float[] P=M.mul(M.tr(0,0,-pelvisDrop),P0);
@@ -199,14 +205,14 @@ final class Hero {
         braid(dt,pl.vx,pl.vy,pl.vz,eyeYaw,gaitAmp);
 
         // ---------------------------------------------------------------- legs (IK to the planted / swinging targets)
-        for(int si=0;si<2;si++){int s=si==0?1:-1;float[] an=ankle(s);
+        for(int si=0;si<2;si++){int s=si==0?1:-1;float[] hk=hock(s);
             float[] hipW=M.pt(P,hip(s));
-            float l1=Model.len(Model.sub(knee(s),hip(s))),l2=Model.len(Model.sub(ankle(s),knee(s)));
-            float[][] ik=ik(hipW,tgt[si],pole[si],l1,l2);
+            float l1=Model.len(Model.sub(knee(s),hip(s))),l2=Model.len(Model.sub(hk,knee(s)));
+            float[][] ik=ik(hipW,hockT[si],pole[si],l1,l2);   // knee forward, calf back to the hock
             mat[sidePart(s,S_THIGH)]=bone(hip(s),knee(s),v(1,0,0),hipW,ik[0],pole[si]);
-            mat[sidePart(s,S_SHIN)]=bone(knee(s),an,v(1,0,0),ik[0],ik[1],pole[si]);
-            float[] aw=ik[1];float fy=wrap(feetYaw+(hipsYaw-feetYaw)*gaitAmp)+s*.07f;
-            mat[sidePart(s,S_FOOT)]=M.mul(M.tr(aw[0],aw[1],aw[2]),M.mul(M.rz(fy),M.mul(M.ry(pitchF[si]),M.tr(-an[0],-an[1],-an[2]))));
+            mat[sidePart(s,S_SHIN)]=bone(knee(s),hk,v(1,0,0),ik[0],ik[1],pole[si]);
+            float[] hw=ik[1];   // cannon and hoof hang from the hock (no gap even when the leg is at full stretch)
+            mat[sidePart(s,S_FOOT)]=M.mul(M.tr(hw[0],hw[1],hw[2]),M.mul(M.rz(fyF[si]),M.mul(M.ry(pitchF[si]),M.tr(-hk[0],-hk[1],-hk[2]))));
         }
 
         // ---------------------------------------------------------------- right arm: the chainsaw
@@ -282,7 +288,10 @@ final class Hero {
 
     /** Pelvis and ankle positions of the current pose (used by the tests). */
     float[] pelvisPos(){return M.pt(mat[P_PELVIS],PELVIS);}
-    float[] anklePos(int s){return M.pt(mat[sidePart(s,S_SHIN)],ankle(s));}
+    float[] anklePos(int s){return M.pt(mat[sidePart(s,S_FOOT)],ankle(s));}
+    /** The lowest point of the hoof's sole. */
+    float[] hoofPos(int s){float[] a=ankle(s),F=mat[sidePart(s,S_FOOT)];float[] best=null;
+        for(float dx=-.02f;dx<=.08f;dx+=.02f){float[] p=M.pt(F,v(a[0]+dx,a[1],0));if(best==null||p[2]<best[2])best=p;}return best;}
     /** The chainsaw: world matrix, how much it is raised and running (0..1), and the shells waiting in its caddy. */
     float[] sawMat;float saw;private float cutPhase;
     final float[][] caddyMats=new float[2][];int caddyCount;

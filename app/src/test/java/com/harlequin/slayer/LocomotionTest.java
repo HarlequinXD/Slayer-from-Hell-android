@@ -36,11 +36,11 @@ public class LocomotionTest {
     @Test public void walkingUpStairsKeepsFeetOnTheSteps(){
         Rig R=new Rig(24.5f,13f);R.pl.yaw=(float)Math.PI/2;R.h.bodyYaw=R.pl.yaw;float worst=0,maxPelvisJump=0;float prevZ=Float.NaN;
         for(int i=0;i<480;i++){R.pl.yaw=(float)Math.PI/2;R.frame(.5f);
-            for(int s=0;s<2;s++){float[] a=R.h.anklePos(s);float fl=R.L.floorUnder(a[0],a[1],.02f);worst=Math.min(worst,a[2]-.088f-fl);}
+            for(int s=0;s<2;s++){float[] a=R.h.hoofPos(s);float fl=R.L.floorUnder(a[0],a[1],.02f);worst=Math.min(worst,a[2]-fl);}
             float pz=R.h.pelvisPos()[2];if(!Float.isNaN(prevZ))maxPelvisJump=Math.max(maxPelvisJump,Math.abs(pz-prevZ));prevZ=pz;}
-        System.out.printf("stairs: climbed to z=%.2f, deepest ankle below its step %.1f cm, largest pelvis jump per frame %.1f cm%n",R.pl.z,-worst*100,maxPelvisJump*100);
+        System.out.printf("stairs: climbed to z=%.2f, deepest hoof below its step %.1f cm, largest pelvis jump per frame %.1f cm%n",R.pl.z,-worst*100,maxPelvisJump*100);
         assertTrue("she should climb: "+R.pl.z,R.pl.z>.7f);
-        assertTrue("feet must not sink into steps: "+worst,worst>-.04f);
+        assertTrue("hooves must not sink into steps: "+worst,worst>-.04f);
         assertTrue("pelvis must not pop: "+maxPelvisJump,maxPelvisJump<.06f);
     }
 }

@@ -143,11 +143,11 @@ final class Game implements GLSurfaceView.Renderer {
             blendFromGetUp(dt);
             // walking into walls: a recoil, or a hard run into one knocks her down
             if(pl.bumpSpeed>0){sfx.play(Sfx.LAND,Math.min(1,pl.bumpSpeed/5)*.7f,1.2f);
-                if(pl.bumpSpeed>3.7f&&hero.run>.7f)startRagdoll(new float[]{pl.bumpNx*2.4f,pl.bumpNy*2.4f,1.2f});
+                if(pl.bumpSpeed>3.7f&&hero.run>.7f)startRagdoll(new float[]{pl.bumpNx*1.6f,pl.bumpNy*1.6f,.4f});
                 else hero.bump(pl.bumpNx,pl.bumpNy,pl.bumpSpeed);}
             if(pl.justLanded&&pl.landSpeed>13.5f)startRagdoll(new float[]{pl.vx*.3f,pl.vy*.3f,0});
-            if(wantRag&&!ragOn){float c=(float)Math.cos(hero.bodyYaw),s=(float)Math.sin(hero.bodyYaw);float side=(fx.rng.nextFloat()-.5f)*1.6f;
-                startRagdoll(new float[]{c*2.2f-s*side,s*2.2f+c*side,1.6f});}
+            if(wantRag&&!ragOn){float c=(float)Math.cos(hero.bodyYaw),s=(float)Math.sin(hero.bodyYaw);float side=(fx.rng.nextFloat()-.5f)*.8f;
+                startRagdoll(new float[]{c*1.3f-s*side,s*1.3f+c*side,.3f});}
             // walking over the dropped shotgun picks it up
             if(!hero.hasGun&&dropped!=null&&dropped.resting&&!hero.picking()){float dx=dropped.c[0]-pl.x,dy=dropped.c[1]-pl.y;
                 if(dx*dx+dy*dy<.55f&&Math.abs(dropped.c[2]-pl.z)<.7f)hero.pickUp(dropped.c);}

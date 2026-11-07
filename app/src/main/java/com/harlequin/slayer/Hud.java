@@ -25,6 +25,10 @@ final class Hud extends View {
         synchronized boolean takeJump(){boolean r=jump;jump=false;return r;}
     }
     final Input in=new Input();
+    /** Called when the pause button is tapped. */
+    Runnable onPause;
+    static boolean showFps=true;
+    private float pauseX(){return getWidth()*.5f;}private float pauseY(){return dp*30;}
     private final Game game;private final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);private final float dp;
     private int movePtr=-1,lookPtr=-1,firePtr=-1,sawPtr=-1;private float mx0,my0,mx,my,lx,ly;
     private final RectF r=new RectF();
@@ -39,6 +43,7 @@ final class Hud extends View {
         int a=e.getActionMasked(),idx=e.getActionIndex(),id=e.getPointerId(idx);
         switch(a){
             case MotionEvent.ACTION_DOWN:case MotionEvent.ACTION_POINTER_DOWN:{float x=e.getX(idx),y=e.getY(idx);
+                if(near(x,y,pauseX(),pauseY(),dp*30)){if(onPause!=null)onPause.run();break;}
                 if(near(x,y,fireX(),fireY(),fireR()*1.1f)){firePtr=id;in.fire=true;lx=x;ly=y;}
                 else if(near(x,y,sawX(),sawY(),sawR()*1.15f)){sawPtr=id;in.saw=true;lx=x;ly=y;}
                 else if(near(x,y,relX(),relY(),smallR()*1.25f))in.pressReload();
@@ -99,11 +104,15 @@ final class Hud extends View {
         int hp=Math.max(0,Math.round(game.health));
         text(c,"+ "+hp,dp*24,dp*40,26,hp<30?0xffff4030:0xffffffff,Paint.Align.LEFT);
         p.setColor(0x40ffffff);c.drawRect(dp*24,dp*50,dp*184,dp*56,p);p.setColor(hp<30?0xffff4030:0xffe8d0b0);c.drawRect(dp*24,dp*50,dp*24+dp*1.6f*hp,dp*56,p);
-        text(c,game.fps+" fps",w/2,dp*22,11,0x90ffffff,Paint.Align.CENTER);
+        // pause button
+        p.setStyle(Paint.Style.FILL);p.setColor(0x40000000);c.drawCircle(pauseX(),pauseY(),dp*20,p);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp*1.5f);p.setColor(0x90ffffff);c.drawCircle(pauseX(),pauseY(),dp*20,p);
+        p.setStyle(Paint.Style.FILL);p.setColor(0xe0ffffff);c.drawRect(pauseX()-dp*6,pauseY()-dp*7,pauseX()-dp*2,pauseY()+dp*7,p);c.drawRect(pauseX()+dp*2,pauseY()-dp*7,pauseX()+dp*6,pauseY()+dp*7,p);
+        if(showFps)text(c,game.fps+" fps",w/2,dp*66,11,0x90ffffff,Paint.Align.CENTER);
+        if(game.bannerT>0&&game.banner!=null)text(c,game.banner,w/2,h*.36f,game.banner.equals("YOU DIED")?34:20,((int)(Math.min(1,game.bannerT)*255)<<24)|(game.banner.equals("YOU DIED")?0xff3020:0xffe8c0),Paint.Align.CENTER);
         // demons left in the keep
         text(c,"DEMONS "+game.demonsLeft+" / "+game.demonsTotal,dp*24,dp*66,15,game.demonsLeft==0?0xff80ff90:0xffff8a50,Paint.Align.LEFT);
-        if(game.demonsLeft==0&&game.demonsTotal>0)text(c,"THE KEEP IS CLEANSED",w/2,h*.3f,26,0xffffd080,Paint.Align.CENTER);
-        if(game.hint>0)text(c,"Demons hold the Molten Keep. Clear it. Mind the lava.",w/2,h*.28f,15,((int)(Math.min(1,game.hint)*230)<<24)|0xffe0c0,Paint.Align.CENTER);
+        if(game.demonsLeft==0&&game.demonsTotal>0)text(c,"ALL DEMONS SLAIN · FIND THE EXIT",w/2,h*.3f,20,0xffffd080,Paint.Align.CENTER);
+        if(game.hint>0){int a=((int)(Math.min(1,game.hint)*230)<<24);text(c,game.map.name.toUpperCase(),w/2,h*.24f,28,a|0xff6a30,Paint.Align.CENTER);text(c,"Slay the demons. Reach the exit. Mind the lava.",w/2,h*.24f+dp*26,14,a|0xffe0c0,Paint.Align.CENTER);}
         postInvalidateOnAnimation();
     }
     private void button(Canvas c,float x,float y,float rad,String label,boolean down,int col){

@@ -33,10 +33,10 @@ public class LocomotionTest {
         for(int s=0;s<2;s++)assertTrue(finite(R.h.anklePos(s)));
         assertTrue("she should cover ground: "+d,d>1f);
     }
-    /** The courtyard's east stairs up to the terrace. */
+    /** Hell's Gate: the stairs from the great hall up to the gallery (six 0.25 m steps). */
     @Test public void walkingUpStairsKeepsFeetOnTheSteps(){
-        Rig R=new Rig(31.5f,27.5f);R.pl.yaw=0;R.h.bodyYaw=R.pl.yaw;float worst=0,maxPelvisJump=0;float prevZ=Float.NaN;
-        for(int i=0;i<480;i++){R.pl.yaw=0;R.frame(.5f);
+        Rig R=new Rig(4f,25.5f);R.pl.yaw=(float)Math.PI/2;R.h.bodyYaw=R.pl.yaw;float worst=0,maxPelvisJump=0;float prevZ=Float.NaN;
+        for(int i=0;i<480;i++){R.pl.yaw=(float)Math.PI/2;R.frame(.5f);
             for(int s=0;s<2;s++){float[] a=R.h.hoofPos(s);float fl=R.L.floorUnder(a[0],a[1],.02f);worst=Math.min(worst,a[2]-fl);}
             float pz=R.h.pelvisPos()[2];if(!Float.isNaN(prevZ))maxPelvisJump=Math.max(maxPelvisJump,Math.abs(pz-prevZ));prevZ=pz;}
         System.out.printf("stairs: climbed to z=%.2f, deepest hoof below its step %.1f cm, largest pelvis jump per frame %.1f cm%n",R.pl.z,-worst*100,maxPelvisJump*100);

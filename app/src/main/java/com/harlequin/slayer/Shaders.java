@@ -25,7 +25,7 @@ final class Shaders {
         "precision highp float;precision highp int;\n"+
         "uniform sampler2D uA;uniform sampler2D uB;uniform sampler2D uC;uniform sampler2D uMask;\n"+
         "uniform vec3 uCam;uniform float uPom;uniform float uEmit;uniform float uEnvK;uniform float uTime;uniform float uExposure;\n"+
-        "uniform vec4 uL[16];uniform vec3 uLC[16];uniform int uLCount;uniform ivec2 uGrid;\n"+
+        "uniform vec4 uL[16];uniform vec3 uLC[16];uniform int uLCount;uniform ivec2 uGrid;uniform vec2 uGridO;uniform float uGridS;\n"+
         "uniform vec3 uSky;uniform vec3 uGround;uniform vec4 uFog;uniform float uPulse;uniform float uShadowK;\n"+
         "in vec3 vPos;in vec3 vN;in vec3 vT;in vec2 vUv;out vec4 fragColor;\n"+
         "const float PI=3.14159265;\n"+
@@ -52,7 +52,7 @@ final class Shaders {
         " vec3 F0=mix(vec3(0.04),albedo,metal);float NdV=max(dot(Nw,V),1e-3);\n"+
         " float a2=rough*rough;a2*=a2;float kG=(rough+1.0)*(rough+1.0)/8.0;\n"+
         // ---- which lights this cell can see (baked visibility)
-        " ivec2 cell=clamp(ivec2(floor(vPos.xy+N.xy*0.06)),ivec2(0),uGrid-1);vec2 mk=texelFetch(uMask,cell,0).rg;\n"+
+        " ivec2 cell=clamp(ivec2(floor((vPos.xy+N.xy*0.06-uGridO)/uGridS)),ivec2(0),uGrid-1);vec2 mk=texelFetch(uMask,cell,0).rg;\n"+
         " int bits=int(mk.r*255.0+0.5)|(int(mk.g*255.0+0.5)<<8);bits|=7<<13;\n"+
         " vec3 Lo=vec3(0.0);int shadowBudget=2;\n"+
         " for(int i=0;i<16;i++){if(i>=uLCount)break;if(((bits>>i)&1)==0)continue;\n"+

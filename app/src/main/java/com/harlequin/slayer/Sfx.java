@@ -10,7 +10,7 @@ import java.util.Random;
 /** Sound effects synthesised at start-up (no audio files): written as WAVs to the cache and played with SoundPool. */
 final class Sfx {
     static final int BLAST=0,PUMP_BACK=1,PUMP_FWD=2,SHELL_IN=3,TINK=4,DRY=5,STEP=6,LAND=7,SIZZLE=8,DRONE=9,JUMP=10,ENGINE=11,GRIND=12,
-        ROAR=13,CHARGE=14,FIREBALL=15,EXPLODE=16,PAIN=17,DIE=18,HIT=19,COUNT=20;
+        ROAR=13,CHARGE=14,FIREBALL=15,EXPLODE=16,PAIN=17,DIE=18,HIT=19,PICKUP=20,COUNT=21;
     private static final int RATE=44100;
     private final SoundPool pool;private final int[] ids=new int[COUNT];private final boolean[] ready=new boolean[COUNT];
     private final Random rng=new Random(3);private int droneStream,engineStream;private float engVol=.2f,engRate=.6f;
@@ -87,6 +87,8 @@ final class Sfx {
                 lp+=(buzz*(1+.6f*(rng.nextFloat()*2-1))-lp)*.1f;float clank=t>1.0f&&t<1.4f?(float)Math.sin(2*Math.PI*620*t)*(float)Math.exp(-(t-1f)*14)*.5f+(rng.nextFloat()*2-1)*(float)Math.exp(-(t-1f)*30)*.6f:0;
                 a[i]=(lp*Math.min(1,t/.05f)*(t<1?1:(float)Math.exp(-(t-1)*6))+clank)*.85f;}reverb(a,.3f);return a;}
             case HIT:{float[] a=clack(.12f,900,.8f,1700);for(int i=0;i<a.length;i++){float t=i/(float)RATE;a[i]+=(float)Math.sin(2*Math.PI*110*t)*(float)Math.exp(-t*30)*.5f;}return a;}
+            case PICKUP:{float[] a=new float[(int)(RATE*.45f)];for(int i=0;i<a.length;i++){float t=i/(float)RATE;float f=t<.08f?660:990;
+                a[i]=((float)Math.sin(2*Math.PI*f*t)*.5f+(float)Math.sin(2*Math.PI*f*2.01f*t)*.2f)*(float)Math.exp(-(t<.08f?t:t-.08f)*9)*.6f;}reverb(a,.25f);return a;}
             default:return new float[100];
         }
     }

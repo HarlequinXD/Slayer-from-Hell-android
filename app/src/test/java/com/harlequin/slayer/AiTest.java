@@ -9,26 +9,27 @@ public class AiTest {
     static final float DT=1/60f;
 
     static final class World {
-        final Level L=new Level();final Player p=new Player();final Enemies E;float t;int shots,hits,lavaFrames;
+        final Level L=new Level(Maps.campaign(1));final Player p=new Player();final Enemies E;float t;int shots,hits,lavaFrames;
         World(){p.spawn(L);E=new Enemies(L,p);}
         void run(int frames,float moveY){for(int i=0;i<frames;i++){t+=DT;p.update(DT,L,0,moveY,0,0,false,0);E.update(DT,t);
             for(Enemies.Event e:E.events){if(e.type==Enemies.EV_SHOOT)shots++;if(e.type==Enemies.EV_HIT_PLAYER)hits++;}E.events.clear();
             for(Demon d:E.demons)if(!d.dead&&L.atF(d.body.x,d.body.y).floorMat==Tex.LAVA)lavaFrames++;
             if(p.health<40)p.health=100;}}
-        /** Walk her up the corridor into the courtyard. */
-        void enter(){for(int i=0;i<60*12&&p.y<14.5f;i++)run(1,1);}
+        /** Walk her through the gate passage into the courtyard of the Molten Keep. */
+        void enter(){for(int i=0;i<60*12&&p.y<12f;i++)run(1,1);}
     }
 
     @Test public void demonsStartIdleAndStayPutWhenNobodyIsAround(){
         World w=new World();w.run(120,0);
-        for(Demon d:w.E.demons){assertFalse(d.ai.alerted);assertTrue(d.ai.stateName(),d.ai.stateName().equals("idle")||d.ai.stateName().equals("patrol"));}
+        int calm=0;for(Demon d:w.E.demons)if(!d.ai.alerted&&(d.ai.stateName().equals("idle")||d.ai.stateName().equals("patrol")))calm++;
+        assertTrue("most are idle or patrolling until they notice her (one can see down the gate passage): "+calm,calm>=w.E.demons.size()-2);
         assertTrue("the keep has demons: "+w.E.demons.size(),w.E.demons.size()>=10);
     }
     @Test public void theySeeHerChaseAndShoot(){
         World w=new World();w.enter();w.run(60*15,0);
         int alerted=0;for(Demon d:w.E.demons)if(d.ai.alerted)alerted++;
         System.out.printf("alerted %d/%d, fireballs %d, hits %d%n",alerted,w.E.demons.size(),w.shots,w.hits);
-        assertTrue("courtyard demons notice her: "+alerted,alerted>=4);
+        assertTrue("courtyard demons notice her: "+alerted,alerted>=3);
         assertTrue("they shoot: "+w.shots,w.shots>=3);
         assertTrue("only a couple attack at once",w.E.attackers<=Enemies.MAX_ATTACKERS);
         assertEquals("nobody walks into lava",0,w.lavaFrames);

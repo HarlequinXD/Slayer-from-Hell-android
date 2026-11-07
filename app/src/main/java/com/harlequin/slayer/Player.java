@@ -68,7 +68,7 @@ final class Player {
         float side=-sy*vx+cy*vy;roll+=((-side/MAX_SPEED)*.018f-roll)*Math.min(1,dt*8);
         // lava
         Level.Cell c=L.atF(x,y);
-        if(!c.solid&&c.floorMat==Tex.LAVA&&z<=c.floor+.05f){health-=40*dt;hurtFlash=1;}
+        if(!c.solid&&c.lava&&z<=c.floor+.05f){health-=40*dt;hurtFlash=1;}
         hurtFlash=Math.max(0,hurtFlash-dt*2);
         if(health<=0){deaths++;spawn(L);}
     }

@@ -14,10 +14,17 @@ final class Enemies {
     static final class Fireball {float x,y,z,vx,vy,vz,life;int owner;boolean alive=true;}
     /** The warden's green plasma bolts. */
     static final class Bolt {float x,y,z,vx,vy,vz,life=2.5f;boolean alive=true;}
-    static final float BOLT_SPEED=34f,BOLT_DAMAGE=30f,BOLT_SPLASH=10f;
+    static final float BOLT_SPEED=34f;
     final ArrayList<Bolt> bolts=new ArrayList<>();
 
-    static final float FIREBALL_SPEED=10.5f,FIREBALL_DAMAGE=12f,SPLASH_DAMAGE=7f,SPLASH_RADIUS=1.6f;
+    static final float FIREBALL_SPEED=10.5f;
+    private final java.util.Random rng=new java.util.Random(99);
+    /** Doom's zombieman shot: 3-15 (3 x 1d5). */
+    int shotDamage(){return 3*(1+rng.nextInt(5));}
+    /** Doom's plasma: 5-40 (5 x 1d8). */
+    int plasmaDamage(){return 5*(1+rng.nextInt(8));}
+    /** Doom's chainsaw bite: 2-20 (2 x 1d10). */
+    int sawDamage(){return 2*(1+rng.nextInt(10));}
     final Level L;final Nav nav;final Player player;
     final ArrayList<Demon> demons=new ArrayList<>();
     final ArrayList<Fireball> fireballs=new ArrayList<>();
@@ -25,7 +32,7 @@ final class Enemies {
     private float navTimer;
     /** Attack tokens: only this many demons may be winding up or firing at once (the rest strafe and close in). */
     static final int MAX_ATTACKERS=2;int attackers;
-    boolean canAttack(){return attackers<MAX_ATTACKERS;}
+    boolean canAttack(){return attackers<(Skill.fast()?MAX_ATTACKERS+1:MAX_ATTACKERS);}
 
     Enemies(Level l,Player p){L=l;player=p;nav=new Nav(l);
         for(float[] s:l.demonSpawns){Demon d=new Demon(demons.size(),s[0],s[1],s[2]);d.E=this;demons.add(d);}
@@ -39,6 +46,7 @@ final class Enemies {
 
     void update(float dt,float time){
         navTimer-=dt;if(navTimer<=0){nav.target(player.x,player.y);navTimer=.2f;}
+        if(Skill.respawn())for(Demon d:demons)if(d.dead&&d.deathT>12){d.reset(L);d.ai.alerted=true;d.ai.hear(player.x,player.y,player.z);events.add(new Event(EV_ROAR,d.id,d.body.x,d.body.y,d.body.z+1.7f,0,0,0));}   // Nightmare: they come back
         for(Demon d:demons){d.update(dt,time,L);if(!d.dead&&d.rig.steps>0&&d.body.onGround)events.add(new Event(EV_STEP,d.id,d.body.x,d.body.y,d.body.z,0,0,0));}
         separate();
         updateFireballs(dt);updateBolts(dt);
@@ -73,7 +81,8 @@ final class Enemies {
         float ax=p.x+p.vx*lead,ay=p.y+p.vy*lead,az=tz;
         float dx=ax-m[0],dy=ay-m[1],dz=az-m[2];float l=(float)Math.sqrt(dx*dx+dy*dy+dz*dz);if(l<1e-3f)return;
         float spread=.06f;dx=dx/l+(d.ai.rng.nextFloat()-.5f)*spread;dy=dy/l+(d.ai.rng.nextFloat()-.5f)*spread;dz=dz/l+(d.ai.rng.nextFloat()-.5f)*spread;l=(float)Math.sqrt(dx*dx+dy*dy+dz*dz);
-        Fireball f=new Fireball();f.x=m[0];f.y=m[1];f.z=m[2];f.vx=dx/l*FIREBALL_SPEED;f.vy=dy/l*FIREBALL_SPEED;f.vz=dz/l*FIREBALL_SPEED;f.life=4;f.owner=d.id;fireballs.add(f);
+        float sp=FIREBALL_SPEED*(Skill.fast()?1.5f:1);
+        Fireball f=new Fireball();f.x=m[0];f.y=m[1];f.z=m[2];f.vx=dx/l*sp;f.vy=dy/l*sp;f.vz=dz/l*sp;f.life=4;f.owner=d.id;fireballs.add(f);
         events.add(new Event(EV_SHOOT,d.id,m[0],m[1],m[2],dx/l,dy/l,dz/l));
     }
     private void updateFireballs(float dt){
@@ -83,7 +92,7 @@ final class Enemies {
                 // the warden: a capsule around her body
                 float dx=f.x-player.x,dy=f.y-player.y;
                 if(dx*dx+dy*dy<.42f*.42f&&f.z>player.z&&f.z<player.z+Player.HEIGHT+.05f){
-                    player.health-=FIREBALL_DAMAGE;player.hurtFlash=1;float l=(float)Math.hypot(f.vx,f.vy);if(l>0){player.vx+=f.vx/l*2.5f;player.vy+=f.vy/l*2.5f;}
+                    player.health-=shotDamage()*Skill.damageTaken();player.hurtFlash=1;float l=(float)Math.hypot(f.vx,f.vy);if(l>0){player.vx+=f.vx/l*2.5f;player.vy+=f.vy/l*2.5f;}
                     events.add(new Event(EV_HIT_PLAYER,f.owner,f.x,f.y,f.z,-f.vx/FIREBALL_SPEED,-f.vy/FIREBALL_SPEED,-f.vz/FIREBALL_SPEED));f.alive=false;break;}
                 if(L.inside(f.x,f.y,f.z)){explode(f);break;}}}
         fireballs.removeIf(f->!f.alive);
@@ -91,8 +100,7 @@ final class Enemies {
     private void explode(Fireball f){
         f.alive=false;float bx=f.x-f.vx*.01f,by=f.y-f.vy*.01f,bz=f.z-f.vz*.01f;
         events.add(new Event(EV_EXPLODE,f.owner,bx,by,bz,-f.vx/FIREBALL_SPEED,-f.vy/FIREBALL_SPEED,-f.vz/FIREBALL_SPEED));
-        float dx=player.x-bx,dy=player.y-by,dz=player.z+.9f-bz;float d=(float)Math.sqrt(dx*dx+dy*dy+dz*dz);
-        if(d<SPLASH_RADIUS){player.health-=SPLASH_DAMAGE*(1-d/SPLASH_RADIUS);player.hurtFlash=Math.max(player.hurtFlash,.6f);}
+        // (no splash: like the zombieman's bullet, only a direct hit hurts)
     }
 
     /** A plasma bolt from her hand cannon, from the muzzle along d (unit). */
@@ -102,12 +110,10 @@ final class Enemies {
             int sub=6;float h=dt/sub;
             for(int s=0;s<sub&&b.alive;s++){float px=b.x,py=b.y,pz=b.z;b.x+=b.vx*h;b.y+=b.vy*h;b.z+=b.vz*h;
                 float l=BOLT_SPEED*h;float[] hit=ray(px,py,pz,b.vx/BOLT_SPEED,b.vy/BOLT_SPEED,b.vz/BOLT_SPEED,l+.12f);
-                if(hit!=null){Demon d=demons.get((int)hit[1]);float dmg=BOLT_DAMAGE*(hit[2]>0?1.8f:1);d.damage(dmg,b.vx/BOLT_SPEED,b.vy/BOLT_SPEED);
+                if(hit!=null){Demon d=demons.get((int)hit[1]);d.damage(plasmaDamage(),b.vx/BOLT_SPEED,b.vy/BOLT_SPEED);
                     float t=hit[0];events.add(new Event(EV_BOLT_HIT,d.id,px+b.vx/BOLT_SPEED*t,py+b.vy/BOLT_SPEED*t,pz+b.vz/BOLT_SPEED*t,b.vx/BOLT_SPEED,b.vy/BOLT_SPEED,b.vz/BOLT_SPEED));b.alive=false;break;}
                 if(L.inside(b.x,b.y,b.z)){b.alive=false;
                     events.add(new Event(EV_BOLT_BURST,-1,px,py,pz,-b.vx/BOLT_SPEED,-b.vy/BOLT_SPEED,-b.vz/BOLT_SPEED));
-                    for(Demon d:demons){if(d.dead)continue;float dx=d.body.x-px,dy=d.body.y-py,dz=d.body.z+1-pz;float dd=(float)Math.sqrt(dx*dx+dy*dy+dz*dz);
-                        if(dd<1.6f)d.damage(BOLT_SPLASH*(1-dd/1.6f),dx/Math.max(dd,.01f),dy/Math.max(dd,.01f));}
                     break;}}}
         bolts.removeIf(b->!b.alive);
     }
@@ -128,13 +134,16 @@ final class Enemies {
         float px=ox-cx,py=oy-cy,pz=oz-cz;float b=px*dx+py*dy+pz*dz,c=px*px+py*py+pz*pz-r*r;float h=b*b-c;if(h<0)return -1;h=(float)Math.sqrt(h);float t=-b-h;return t>=0?t:(-b+h>=0?0:-1);
     }
     /** The chainsaw's bar from a to b biting into any demon it touches: damage over time; returns the contact point or null. */
+    private float sawClock;
     float[] saw(float[] a,float[] b,float dt){
+        sawClock-=dt;boolean bite=sawClock<=0;   // the saw bites about nine times a second (every 4 tics)
         float[] hit=null;
         for(Demon d:demons){if(d.dead)continue;float r=Demon.RADIUS*Demon.SCALE+.03f;
             for(int k=0;k<=6;k++){float t=k/6f;float x=a[0]+(b[0]-a[0])*t,y=a[1]+(b[1]-a[1])*t,z=a[2]+(b[2]-a[2])*t;
                 float dx=x-d.body.x,dy=y-d.body.y;if(dx*dx+dy*dy<r*r&&z>d.body.z+.1f&&z<d.body.z+1.85f*Demon.SCALE){
-                    float l=(float)Math.hypot(dx,dy);d.damage(130*dt,l>0?-dx/l:1,l>0?-dy/l:0);if(d.ai.state()==Demon.PAIN)d.painCool=.6f;
+                    float l=(float)Math.hypot(dx,dy);if(bite)d.damage(sawDamage(),l>0?-dx/l:1,l>0?-dy/l:0);
                     hit=new float[]{x,y,z};break;}}}
+        if(bite&&hit!=null)sawClock=4/35f;
         return hit;
     }
 }

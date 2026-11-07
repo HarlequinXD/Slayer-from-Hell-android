@@ -40,6 +40,7 @@ final class Level {
             cells[j*W+i]=c;}
         spawnX=m.playerX;spawnY=m.playerY;spawnAngle=m.facing;
         for(SectorMap.Thing t:m.things){
+            if(!Skill.present(t.skills))continue;   // not on this difficulty
             if(t.type==SectorMap.T_DEMON)demonSpawns.add(new float[]{t.x,t.y,t.angle});
             else if(t.type==SectorMap.T_HEALTH||t.type==SectorMap.T_SHELLS)pickups.add(new Pickup(t.type,t.x,t.y,floorUnder(t.x,t.y,0)));
             else if(t.type>=SectorMap.T_LAMP_WARM&&t.type<=SectorMap.T_LAMP_WHITE&&lights.size()<MAX_LIGHTS){int s=m.sectorAt(t.x,t.y);if(s<0)continue;SectorMap.Sector S=m.sectors.get(s);

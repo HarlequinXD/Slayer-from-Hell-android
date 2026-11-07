@@ -37,6 +37,7 @@ final class EditorView extends View {
     /** The entity list, in display order. */
     private static final int[] ENTITY_LIST={SectorMap.T_PLAYER,SectorMap.T_DEMON,SectorMap.T_HEALTH,SectorMap.T_SHELLS,SectorMap.T_LAMP_WARM,SectorMap.T_LAMP_RED,SectorMap.T_LAMP_BLUE,SectorMap.T_LAMP_WHITE};
     // touch targets
+    private static final int H_SKILLF=300;
     private static final int H_BACK=1,H_SAVE=2,H_PLAY=3,H_TAB=10,H_UNDO=20,H_REDO=21,H_NAME=22,H_PAGE=30,H_TOOL=40,H_APPLY=60,H_ZOOMIN=61,H_ZOOMOUT=62,H_ENT=100,H_ETOOL=200;
 
     private static String toolName(int t){switch(t){case DRAW:return "Draw";case LINE:return "Line";case RECT:return "Rectangle";case STAIRS:return "Stairs";
@@ -282,7 +283,11 @@ final class EditorView extends View {
             SectorMap m=map();
             if(selThing==-2){ui.text(c,"Player start",l+dp(10),y+dp(22),14,Ui.TEXT,1,-1);stat(c,l+dp(10),y+dp(54),EditorViewFmt.f(m.playerX)+", "+EditorViewFmt.f(m.playerY),"Position");stat(c,l+dp(120),y+dp(54),Math.round(Math.toDegrees(m.facing))+"°","Facing");}
             else if(selThing>=0&&selThing<m.things.size()){SectorMap.Thing t=m.things.get(selThing);ui.text(c,SectorMap.THING_NAMES[t.type],l+dp(10),y+dp(22),14,Ui.TEXT,1,-1);
-                stat(c,l+dp(10),y+dp(54),EditorViewFmt.f(t.x)+", "+EditorViewFmt.f(t.y),"Position");stat(c,l+dp(120),y+dp(54),Math.round(Math.toDegrees(t.angle))+"°","Facing");}
+                stat(c,l+dp(10),y+dp(54),EditorViewFmt.f(t.x)+", "+EditorViewFmt.f(t.y),"Position");stat(c,l+dp(120),y+dp(54),Math.round(Math.toDegrees(t.angle))+"°","Facing");
+                // which difficulties it appears on (Doom's skill flags)
+                float sy=y+dp(104);ui.caption(c,"Appears on",l,sy,0xffd08060);String[] sk={"Easy","Normal","Hard"};float bw=(rr-l-dp(8))/3f;
+                for(int k=0;k<3;k++){r.set(l+k*(bw+dp(4)),sy+dp(8),l+k*(bw+dp(4))+bw,sy+dp(40));ui.button(c,r,-1,sk[k],(t.skills&(1<<k))!=0?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_SKILLF+k);}
+                y+=dp(56);}
             else{ui.text(c,"Nothing selected",l+dp(10),y+dp(22),12.5f,Ui.TEXT_2,1,-1);ui.text(c,"Use Select, then Apply on an entity.",l+dp(10),y+dp(42),11,Ui.TEXT_3);}
             y+=dp(110);
             ui.caption(c,"In this map",l,y,Ui.TEXT_3);y+=dp(18);
@@ -540,6 +545,9 @@ final class EditorView extends View {
         if(hid>=H_PAGE&&hid<H_PAGE+3){toolPage=hid-H_PAGE;return;}
         if(hid>=H_TOOL&&hid<H_TOOL+PAGES[toolPage].length&&mode==SECTORS){sectorAction(PAGES[toolPage][hid-H_TOOL]);return;}
         if(hid>=H_ENT&&hid<H_ENT+ENTITY_LIST.length){entType=ENTITY_LIST[hid-H_ENT];entityTool=0;entStage=0;hint(SectorMap.THING_NAMES[entType]+" · Apply to place");return;}
+        if(hid>=H_SKILLF&&hid<H_SKILLF+3&&selThing>=0&&selThing<map().things.size()){SectorMap.Thing t=map().things.get(selThing);
+            if(ed.setThingSkills(selThing,t.skills^(1<<(hid-H_SKILLF))))changed(null);else{hint(ed.error);return;}
+            String on=((t.skills&1)!=0?"Easy ":"")+((t.skills&2)!=0?"Normal ":"")+((t.skills&4)!=0?"Hard":"");hint("Appears on: "+on.trim());return;}
         if(hid>=H_ETOOL&&hid<H_ETOOL+5){entityTool=hid-H_ETOOL;entStage=0;hint(ENTITY_TOOLS[entityTool]+" · move the cursor and tap Apply");}
     }
     private void postDpadRepeat(){

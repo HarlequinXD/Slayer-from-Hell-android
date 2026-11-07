@@ -108,7 +108,7 @@ final class Hud extends View {
         // demons left in the keep
         text(c,"DEMONS "+game.demonsLeft+" / "+game.demonsTotal,dp*24,dp*66,15,game.demonsLeft==0?0xff80ff90:0xffff8a50,Paint.Align.LEFT);
         if(game.demonsLeft==0&&game.demonsTotal>0)text(c,"ALL DEMONS SLAIN · FIND THE EXIT",w/2,h*.3f,20,0xffffd080,Paint.Align.CENTER);
-        if(game.hint>0){int a=((int)(Math.min(1,game.hint)*230)<<24);text(c,game.map.name.toUpperCase(),w/2,h*.24f,28,a|0xff6a30,Paint.Align.CENTER);text(c,"Slay the demons. Reach the exit. Mind the lava.",w/2,h*.24f+dp*26,14,a|0xffe0c0,Paint.Align.CENTER);}
+        if(game.hint>0){int a=((int)(Math.min(1,game.hint)*230)<<24);text(c,game.map.name.toUpperCase(),w/2,h*.24f,28,a|0xff6a30,Paint.Align.CENTER);text(c,Skill.NAMES[Skill.current]+" · Slay the demons. Reach the exit. Mind the lava.",w/2,h*.24f+dp*26,14,a|0xffe0c0,Paint.Align.CENTER);}
         postInvalidateOnAnimation();
     }
     private void button(Canvas c,float x,float y,float rad,String label,boolean down,int col){

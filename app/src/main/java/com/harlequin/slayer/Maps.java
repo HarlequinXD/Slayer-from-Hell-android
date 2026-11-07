@@ -31,11 +31,14 @@ final class Maps {
             if(!ed.makeStairs(m.sectors.indexOf(s),fx,fy,rise,depth))throw new IllegalStateException(m.name+" stairs: "+ed.error);m.index();}
         void thing(int type,float x,float y,float angle){m.things.add(new SectorMap.Thing(type,x,y,angle));}
         void demon(float x,float y,float angle){thing(SectorMap.T_DEMON,x,y,angle);}
+        /** A demon on some skills only: E (easy), M (Hurt Me Plenty), H (Ultra-Violence/Nightmare), as in Doom's flags. */
+        void demon(float x,float y,float angle,int skills){thing(SectorMap.T_DEMON,x,y,angle);m.things.get(m.things.size()-1).skills=skills;}
         void lamp(int type,float x,float y){thing(type,x,y,0);}
         void start(float x,float y,float facing){m.playerX=x;m.playerY=y;m.facing=facing;}
         SectorMap done(){m.index();String v=ed.validateMap();if(!v.equals("Geometry valid"))throw new IllegalStateException(m.name+": "+v);return m;}
     }
     static final float N=(float)Math.PI/2,S=-N,E=0,W=(float)Math.PI;
+    static final int ALL=Skill.F_ALL,MH=Skill.F_NORMAL|Skill.F_HARD,H=Skill.F_HARD;
     static final int BR=Tex.BRICK,MP=Tex.METAL_PANEL,FT=Tex.FLOOR_TILES,DP=Tex.DIAMOND_PLATE,CO=Tex.CONCRETE,CR=Tex.CRATE,LT=Tex.LIGHT,PI=Tex.PILLAR;
 
     /**
@@ -59,7 +62,8 @@ final class Maps {
         SectorMap.Sector dais=b.poly(.5f,7,MP,MP,PI,2,18,6,18,6,22,2,22);
         SectorMap.Sector altar=b.poly(1,7,LT,MP,PI,3,19,5,19,5,21,3,21);
         b.lamp(SectorMap.T_LAMP_RED,4,20);b.lamp(SectorMap.T_LAMP_WARM,-1,14.5f);b.lamp(SectorMap.T_LAMP_WARM,9,14.5f);
-        b.demon(4,20,S);b.demon(1,20,E);b.demon(9,22,W);b.demon(10,17,W);
+        // the great hall: the altar's guard; more on harder skills, spread to the far corners
+        b.demon(4,20,S,ALL);b.demon(10,24.5f,W,MH);b.demon(-2.5f,25.5f,E,H);
         b.thing(SectorMap.T_HEALTH,-.5f,25.5f,0);
         // the armoury: a window and a door from the hall
         b.rect(12,19,13,21,1.2f,2.6f,MP,MP,MP);
@@ -67,7 +71,7 @@ final class Maps {
         b.rect(13,15,21,26,0,4,DP,CO,MP);
         b.rect(15,17,16,18,1,4,CR,CO,CR);b.rect(16,17,17,18,2,4,CR,CO,CR);b.rect(18,22,19,23,1,4,CR,CO,CR);
         b.lamp(SectorMap.T_LAMP_BLUE,17,25);
-        b.demon(19,19,W);b.demon(15,24,S);
+        b.demon(19,19,W,ALL);b.demon(15,24.5f,S,MH);
         b.thing(SectorMap.T_SHELLS,20,16,0);b.thing(SectorMap.T_SHELLS,14,16,0);b.thing(SectorMap.T_HEALTH,20,25,0);
         // stairs up to the gallery
         b.stairs(2,27,6,31,0,6,4,27,.25f,.667f,DP,MP);
@@ -75,7 +79,7 @@ final class Maps {
         b.lava(.8f,6.5f,32,8.5f,32,8.5f,35,6.5f,35);
         b.pillar(-1,32,0,33);
         b.lamp(SectorMap.T_LAMP_WARM,3,35.5f);
-        b.demon(1,34,S);b.demon(7,36,S);b.demon(-1,35.5f,E);
+        b.demon(7,36,S,ALL);b.demon(1,34,S,MH);b.demon(-1,35.5f,E,H);
         b.thing(SectorMap.T_HEALTH,9,33,0);
         // exit shrine
         SectorMap.Sector ex=b.rect(2,37,6,40,1.5f,4.2f,LT,MP,PI);ex.special=SectorMap.SP_EXIT;
@@ -109,25 +113,26 @@ final class Maps {
         b.stairs(7,19,9,21,0,10,7,20,.25f,.333f,DP,MP);b.stairs(-9,19,-7,21,0,10,-7,20,.25f,.333f,DP,MP);
         b.pillar(-4,10.5f,-3,11.5f);b.pillar(3,10.5f,4,11.5f);b.pillar(-4,28.5f,-3,29.5f);b.pillar(3,28.5f,4,29.5f);
         b.lamp(SectorMap.T_LAMP_RED,0,20);b.lamp(SectorMap.T_LAMP_WARM,0,11);b.lamp(SectorMap.T_LAMP_WARM,0,29.5f);
-        b.demon(0,20,S);b.demon(10,23,W);b.demon(-10,17,E);b.demon(-6,11,N);b.demon(6,29,S);b.demon(-8,26,S);
+        // the courtyard: the altar's guard; others far from the gate on harder skills (none in sight of the start)
+        b.demon(0,20,S,ALL);b.demon(6,29,S,MH);b.demon(10,23,W,H);b.demon(-8,26,S,H);
         // east wing (from the east terrace)
         b.rect(11,19,12,21,1.5f,4,DP,MP,MP);
         b.rect(12,16,18,24,1.5f,4.5f,DP,CO,MP);
         b.rect(14,18,15,19,2.5f,4.5f,CR,CO,CR);b.rect(16,21,17,22,2.5f,4.5f,CR,CO,CR);
-        b.lamp(SectorMap.T_LAMP_BLUE,17,23);b.demon(16,18,W);b.demon(13,23,S);
+        b.lamp(SectorMap.T_LAMP_BLUE,17,23);b.demon(16,18,W,ALL);b.demon(13,23,S,H);
         b.thing(SectorMap.T_SHELLS,17.2f,16.8f,0);b.thing(SectorMap.T_SHELLS,13,17,0);
         // west wing (from the west terrace)
         b.rect(-12,19,-11,21,1.5f,4,DP,MP,MP);
         b.rect(-18,16,-12,24,1.5f,4.5f,DP,CO,MP);
         b.rect(-15,18,-14,19,2.5f,4.5f,CR,CO,CR);
-        b.lamp(SectorMap.T_LAMP_BLUE,-17,23);b.demon(-16,20,E);b.thing(SectorMap.T_HEALTH,-17,17,0);b.thing(SectorMap.T_SHELLS,-13,23,0);
+        b.lamp(SectorMap.T_LAMP_BLUE,-17,23);b.demon(-16,20,E,MH);b.thing(SectorMap.T_HEALTH,-17,17,0);b.thing(SectorMap.T_SHELLS,-13,23,0);
         // north passage and the temple
         b.rect(-1.5f,31,1.5f,34,0,4,DP,MP,MP);
         b.poly(0,8,FT,CO,BR,-7,36,-5,34,5,34,7,36,7,44,5,46,-5,46,-7,44);
         b.lava(-.8f,-6.5f,37,-5.5f,37,-5.5f,43,-6.5f,43);b.lava(-.8f,5.5f,37,6.5f,37,6.5f,43,5.5f,43);
         b.pillar(-4,37,-3,38);b.pillar(3,37,4,38);b.pillar(-4,42,-3,43);b.pillar(3,42,4,43);
         b.lamp(SectorMap.T_LAMP_RED,-4.5f,40);b.lamp(SectorMap.T_LAMP_RED,4.5f,40);
-        b.demon(-2,44,S);b.demon(2,44,S);b.demon(0,39,S);b.demon(-5,45,E);
+        b.demon(0,44.5f,S,ALL);b.demon(-2,44,S,MH);b.demon(0,39,S,MH);b.demon(2,44,S,H);
         b.thing(SectorMap.T_HEALTH,0,35,0);
         SectorMap.Sector ex=b.rect(-2,46,2,49,.5f,4f,LT,MP,PI);ex.special=SectorMap.SP_EXIT;
         b.lamp(SectorMap.T_LAMP_WHITE,0,48);

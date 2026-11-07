@@ -23,14 +23,14 @@ public class AiTest {
         World w=new World();w.run(120,0);
         int calm=0;for(Demon d:w.E.demons)if(!d.ai.alerted&&(d.ai.stateName().equals("idle")||d.ai.stateName().equals("patrol")))calm++;
         assertTrue("most are idle or patrolling until they notice her (one can see down the gate passage): "+calm,calm>=w.E.demons.size()-2);
-        assertTrue("the keep has demons: "+w.E.demons.size(),w.E.demons.size()>=10);
+        assertTrue("the keep has demons: "+w.E.demons.size(),w.E.demons.size()>=6);
     }
     @Test public void theySeeHerChaseAndShoot(){
         World w=new World();w.enter();w.run(60*15,0);
         int alerted=0;for(Demon d:w.E.demons)if(d.ai.alerted)alerted++;
         System.out.printf("alerted %d/%d, fireballs %d, hits %d%n",alerted,w.E.demons.size(),w.shots,w.hits);
-        assertTrue("courtyard demons notice her: "+alerted,alerted>=3);
-        assertTrue("they shoot: "+w.shots,w.shots>=3);
+        assertTrue("courtyard demons notice her: "+alerted,alerted>=2);
+        assertTrue("they shoot: "+w.shots,w.shots>=2);
         assertTrue("only a couple attack at once",w.E.attackers<=Enemies.MAX_ATTACKERS);
         assertEquals("nobody walks into lava",0,w.lavaFrames);
     }

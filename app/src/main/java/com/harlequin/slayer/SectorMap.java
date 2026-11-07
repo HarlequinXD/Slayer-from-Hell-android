@@ -28,7 +28,8 @@ final class SectorMap {
         float floor=0,ceil=4;int floorTex=Tex.FLOOR_TILES,ceilTex=Tex.CONCRETE,wallTex=Tex.BRICK,special=SP_NONE,tag=0;
         Sector copyProps(Sector o){floor=o.floor;ceil=o.ceil;floorTex=o.floorTex;ceilTex=o.ceilTex;wallTex=o.wallTex;special=o.special;tag=o.tag;return this;}
     }
-    static final class Thing {float x,y,angle;int type;Thing(int type,float x,float y,float angle){this.type=type;this.x=x;this.y=y;this.angle=angle;}}
+    /** A placed thing; skills = which difficulty sets it appears on (Skill.F_EASY | F_NORMAL | F_HARD). */
+    static final class Thing {float x,y,angle;int type,skills=Skill.F_ALL;Thing(int type,float x,float y,float angle){this.type=type;this.x=x;this.y=y;this.angle=angle;}}
     /** A wall line: vertices a→b, the sector on its left (front) and right (back); -1 = outside the map (solid). */
     static final class Line {int a,b;int front=-1,back=-1;Line(int a,int b){this.a=a;this.b=b;}}
 
@@ -54,7 +55,7 @@ final class SectorMap {
         for(Sector s:sectors){sb.append("s ").append(f(s.floor)).append(' ').append(f(s.ceil)).append(' ').append(s.floorTex).append(' ').append(s.ceilTex).append(' ').append(s.wallTex).append(' ').append(s.special).append(' ').append(s.tag).append(' ').append(s.loop.size());
             for(int i:s.loop)sb.append(' ').append(i);sb.append('\n');}
         for(java.util.Map.Entry<Long,Integer> e:wallTex.entrySet())sb.append("w ").append((int)(e.getKey()>>32)).append(' ').append((int)(long)e.getKey()).append(' ').append(e.getValue()).append('\n');
-        for(Thing t:things)sb.append("t ").append(t.type).append(' ').append(f(t.x)).append(' ').append(f(t.y)).append(' ').append(f(t.angle)).append('\n');
+        for(Thing t:things)sb.append("t ").append(t.type).append(' ').append(f(t.x)).append(' ').append(f(t.y)).append(' ').append(f(t.angle)).append(' ').append(t.skills).append('\n');
         return sb.toString();
     }
     private static String f(float v){if(Math.abs(v-Math.round(v))<1e-5f)return String.valueOf(Math.round(v));return String.valueOf(v);}
@@ -69,7 +70,7 @@ final class SectorMap {
                 case "s":{Sector s=new Sector();s.floor=Float.parseFloat(p[1]);s.ceil=Float.parseFloat(p[2]);s.floorTex=Integer.parseInt(p[3]);s.ceilTex=Integer.parseInt(p[4]);s.wallTex=Integer.parseInt(p[5]);
                     s.special=Integer.parseInt(p[6]);s.tag=Integer.parseInt(p[7]);int n=Integer.parseInt(p[8]);for(int i=0;i<n;i++)s.loop.add(Integer.parseInt(p[9+i]));m.sectors.add(s);break;}
                 case "w":m.wallTex.put(wallKey(Integer.parseInt(p[1]),Integer.parseInt(p[2])),Integer.parseInt(p[3]));break;
-                case "t":m.things.add(new Thing(Integer.parseInt(p[1]),Float.parseFloat(p[2]),Float.parseFloat(p[3]),Float.parseFloat(p[4])));break;
+                case "t":{Thing t=new Thing(Integer.parseInt(p[1]),Float.parseFloat(p[2]),Float.parseFloat(p[3]),Float.parseFloat(p[4]));if(p.length>5)t.skills=Integer.parseInt(p[5]);m.things.add(t);break;}
             }}
         return m;
     }

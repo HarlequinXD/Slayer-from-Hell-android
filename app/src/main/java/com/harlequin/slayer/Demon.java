@@ -16,7 +16,9 @@ package com.harlequin.slayer;
  * Pure Java.
  */
 final class Demon {
-    static final float MAX_HEALTH=150,SCALE=1.08f,EYE=1.68f,RADIUS=.33f;
+    /** Doom zombieman stats: 20 health, pain chance 200/256. */
+    static final float MAX_HEALTH=20,PAIN_CHANCE=200/256f;
+    static final float SCALE=1.08f,EYE=1.68f,RADIUS=.33f;
     static final float SIGHT=34f,FOV=1.2f,ATTACK_RANGE=24f;
     private static final Gun NOGUN=new Gun();
     static final float[] MUZZLE_LOCAL=new float[]{.675f,0,0};
@@ -86,7 +88,7 @@ final class Demon {
         if(dead)return;health-=amount;hitFlash=1;
         Player p=E.player;ai.hear(p.x,p.y,p.z);
         if(health<=0){fallYaw=(float)Math.atan2(dy,dx);ai.set(this,DEAD);return;}
-        if(amount>=14&&painCool<=0&&ai.rng.nextFloat()<.65f){tx=dx;ty=dy;ai.set(this,PAIN);}
+        if(amount>0&&painCool<=0&&ai.rng.nextFloat()<PAIN_CHANCE){tx=dx;ty=dy;ai.set(this,PAIN);}
         else if(ai.state()==IDLE||ai.state()==PATROL)ai.set(this,ALERT);
     }
 
@@ -142,8 +144,9 @@ final class Demon {
         public Ai.State<Demon> update(Demon d,Ai<Demon> ai,float dt){
             d.aiming=true;d.face(ai.bearing);
             if(!d.fired&&!ai.canSee&&ai.sinceSeen>.6f)return CHASE;   // lost her during the wind-up
-            if(!d.fired&&ai.stateTime>.65f){d.E.fireball(d);d.fired=true;}
-            if(ai.stateTime>1.05f){ai.cooldown=2f+ai.rng.nextFloat()*2f;return ai.canSee?STRAFE:CHASE;}
+            float wind=Skill.fast()?.15f:.3f;   // the zombieman takes about 10 tics to aim
+            if(!d.fired&&ai.stateTime>wind){d.E.fireball(d);d.fired=true;}
+            if(ai.stateTime>wind+.35f){ai.cooldown=(1.5f+ai.rng.nextFloat()*1.5f)*(Skill.fast()?.5f:1);return ai.canSee?STRAFE:CHASE;}
             return this;}};
     static final Ai.State<Demon> STRAFE=new Ai.State<Demon>(){
         public String name(){return "strafe";}
@@ -157,9 +160,9 @@ final class Demon {
             return ai.canSee&&ai.dist<4?STRAFE:CHASE;}};
     static final Ai.State<Demon> PAIN=new Ai.State<Demon>(){
         public String name(){return "pain";}
-        public void enter(Demon d,Ai<Demon> ai){d.painCool=1.1f;float l=(float)Math.hypot(d.tx,d.ty);if(l>1e-3f)d.rig.bump(d.tx/l,d.ty/l,3.5f);d.E.event(Enemies.EV_PAIN,d);}
+        public void enter(Demon d,Ai<Demon> ai){d.painCool=.25f;float l=(float)Math.hypot(d.tx,d.ty);if(l>1e-3f)d.rig.bump(d.tx/l,d.ty/l,3.5f);d.E.event(Enemies.EV_PAIN,d);}
         public Ai.State<Demon> update(Demon d,Ai<Demon> ai,float dt){
-            if(ai.stateTime<.38f)return this;
+            if(ai.stateTime<.17f)return this;   // a 6-tic flinch
             return ai.canSee&&ai.cooldown<=0&&d.E.canAttack()?ATTACK:CHASE;}};
     static final Ai.State<Demon> DEAD=new Ai.State<Demon>(){
         public String name(){return "dead";}

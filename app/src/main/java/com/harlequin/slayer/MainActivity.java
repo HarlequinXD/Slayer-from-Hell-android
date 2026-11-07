@@ -41,7 +41,7 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
     }
     private void startGame(SectorMap m){
         stopGame();root.removeAllViews();playing=m.copy();
-        game=new Game(this,m);game.sfx=sfx;
+        game=new Game(this,m);game.sfx=sfx;sfx.restartLoops();
         hud=new Hud(this,game);game.hud=hud;hud.onPause=()->runOnUiThread(this::pauseGame);
         game.listener=(k,t,s)->runOnUiThread(()->levelComplete(k,t,s));
         gl=new GLSurfaceView(this);   // full-resolution surface: Game renders at RENDER_LINES lines and point-scales up itself

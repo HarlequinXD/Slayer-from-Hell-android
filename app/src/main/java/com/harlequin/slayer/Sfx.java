@@ -16,8 +16,8 @@ final class Sfx {
     private final Random rng=new Random(3);private int droneStream,engineStream;private float engVol=.2f,engRate=.6f;
 
     Sfx(Context c){
-        pool=new SoundPool.Builder().setMaxStreams(16).setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()).build();
-        pool.setOnLoadCompleteListener((p,id,status)->{for(int i=0;i<COUNT;i++)if(ids[i]==id){ready[i]=status==0;if(i==DRONE&&ready[i])droneStream=p.play(id,.35f,.35f,0,-1,1);if(i==ENGINE&&ready[i])engineStream=p.play(id,engVol,engVol,0,-1,engRate);}});
+        pool=new SoundPool.Builder().setMaxStreams(28).setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()).build();
+        pool.setOnLoadCompleteListener((p,id,status)->{for(int i=0;i<COUNT;i++)if(ids[i]==id){ready[i]=status==0;if(i==DRONE&&ready[i])droneStream=p.play(id,.35f,.35f,LOOP_PRI,-1,1);if(i==ENGINE&&ready[i])engineStream=p.play(id,engVol,engVol,LOOP_PRI,-1,engRate);}});
         File dir=c.getCacheDir();
         new Thread(()->{for(int i=0;i<COUNT;i++){try{File f=new File(dir,"sfx"+i+".wav");write(f,make(i));ids[i]=pool.load(f.getPath(),1);}catch(Exception ignored){}}},"sfx").start();
     }
@@ -27,6 +27,14 @@ final class Sfx {
     void engine(float vol,float rate){
         rate=Math.max(.5f,Math.min(2f,rate));if(Math.abs(vol-engVol)<.01f&&Math.abs(rate-engRate)<.01f)return;engVol=vol;engRate=rate;
         if(engineStream!=0){pool.setVolume(engineStream,vol,vol);pool.setRate(engineStream,rate);}
+    }
+    /** Loops play at a high priority so a burst of one-shot effects can never steal their streams (one-shots use 1). */
+    private static final int LOOP_PRI=10;
+    /** Restarts the drone and engine loops: called when a level starts, so a stream lost to the OS comes back. */
+    void restartLoops(){
+        if(droneStream!=0)pool.stop(droneStream);if(engineStream!=0)pool.stop(engineStream);droneStream=engineStream=0;
+        if(ready[DRONE])droneStream=pool.play(ids[DRONE],.35f,.35f,LOOP_PRI,-1,1);
+        if(ready[ENGINE])engineStream=pool.play(ids[ENGINE],engVol,engVol,LOOP_PRI,-1,engRate);
     }
     void pause(){pool.autoPause();}
     void resume(){pool.autoResume();}

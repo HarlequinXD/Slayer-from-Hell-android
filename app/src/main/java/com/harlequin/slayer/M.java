@@ -3,6 +3,10 @@ package com.harlequin.slayer;
 /** Column-major 4x4 matrix helpers (same layout as OpenGL), pure Java. */
 final class M {
     private M(){}
+    /** Inverse of a rigid transform (rotation and translation only). */
+    static float[] inv(float[] m){float[] r=id();
+        for(int c=0;c<3;c++)for(int k=0;k<3;k++)r[c*4+k]=m[k*4+c];
+        for(int k=0;k<3;k++)r[12+k]=-(r[k]*m[12]+r[4+k]*m[13]+r[8+k]*m[14]);return r;}
     static float[] id(){float[] m=new float[16];m[0]=m[5]=m[10]=m[15]=1;return m;}
     static float[] mul(float[] a,float[] b){float[] r=new float[16];
         for(int c=0;c<4;c++)for(int rr=0;rr<4;rr++){float s=0;for(int k=0;k<4;k++)s+=a[k*4+rr]*b[c*4+k];r[c*4+rr]=s;}return r;}

@@ -76,6 +76,14 @@ final class Demon {
         rig.update(dt,time,body,L,body.yaw,0,false,false,NOGUN);
         world=M.mul(M.tr(body.x,body.y,body.z),M.mul(M.scale(SCALE,SCALE,SCALE),M.tr(-body.x,-body.y,-body.z)));
     }
+    /** A glory kill: no AI; he stands where the cutscene puts him, facing it, posed by his rig's cutscene override. */
+    void cinePose(float dt,float time,Level L,float x,float y,float z,float yaw){
+        hitFlash=Math.max(0,hitFlash-dt*4);charge=Hero.approach(charge,0,6,dt);
+        float k=1/Math.max(dt,1e-4f);body.vx=(x-body.x)*k;body.vy=(y-body.y)*k;body.vz=0;body.x=x;body.y=y;body.z=z;body.yaw=yaw;body.onGround=true;
+        body.justJumped=body.justLanded=false;body.bumpSpeed=0;body.pushingWall=false;
+        rig.update(dt,time,body,L,yaw,0,false,true,NOGUN);
+        world=M.mul(M.tr(body.x,body.y,body.z),M.mul(M.scale(SCALE,SCALE,SCALE),M.tr(-body.x,-body.y,-body.z)));
+    }
     /** Topples away from the killing blow, pivoting on the hooves. */
     float[] deathMatrix(){
         float t=Math.min(1,deathT/.85f);float a=t*t*1.48f;float drop=-.06f*t;

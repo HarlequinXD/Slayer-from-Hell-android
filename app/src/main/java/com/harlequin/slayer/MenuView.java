@@ -26,7 +26,7 @@ final class MenuView extends View {
         void resume();void restart();void leaveGame();void nextLevel();
     }
     static final int MAIN=0,CAMPAIGN=1,CUSTOM=2,SETTINGS=3,PAUSE=4,COMPLETE=5,SKILL=6;
-    private static final int H_ITEM=100,H_BACK=1,H_NEW=2,H_PLAY=300,H_EDIT=400,H_DEL=500,H_SET=600,H_SKILL=700;
+    private static final int H_ITEM=100,H_BACK=1,H_NEW=2,H_PLAY=300,H_EDIT=400,H_DEL=500,H_SET=600,H_SKILL=700,H_EDITC=800,H_PLAYC=900;
     /** What to play once a skill is chosen: a campaign map, or a custom level's id. */
     private int pendingCampaign=-1;private String pendingCustom;private int skillFrom=MAIN;
 
@@ -51,8 +51,8 @@ final class MenuView extends View {
 
     // ---------------------------------------------------------------- settings
     static void loadSettings(Context c){SharedPreferences s=c.getSharedPreferences("slayer",0);
-        Skill.current=Math.max(0,Math.min(4,s.getInt("skill",Skill.MEDIUM)));Game.lookSens=s.getFloat("sens",.0055f);Game.invertLook=s.getBoolean("invert",false);Game.RENDER_LINES=s.getInt("lines",270);Hud.showFps=s.getBoolean("fps",true);}
-    private void saveSettings(){prefs.edit().putFloat("sens",Game.lookSens).putBoolean("invert",Game.invertLook).putInt("lines",Game.RENDER_LINES).putBoolean("fps",Hud.showFps).apply();}
+        Skill.current=Math.max(0,Math.min(4,s.getInt("skill",Skill.MEDIUM)));Game.lookSens=s.getFloat("sens",.0055f);Game.invertLook=s.getBoolean("invert",false);Game.RENDER_LINES=s.getInt("lines",270);Hud.showFps=s.getBoolean("fps",true);Game.aimAssist=s.getBoolean("aim",true);}
+    private void saveSettings(){prefs.edit().putFloat("sens",Game.lookSens).putBoolean("invert",Game.invertLook).putInt("lines",Game.RENDER_LINES).putBoolean("fps",Hud.showFps).putBoolean("aim",Game.aimAssist).apply();}
 
     // ---------------------------------------------------------------- drawing
     @Override protected void onDraw(Canvas c){
@@ -143,8 +143,8 @@ final class MenuView extends View {
             ui.text(c,"Edited "+android.text.format.DateFormat.format("d MMM yyyy, HH:mm",e.modified),l+dp(52),t+dp(47),11,0xa0e0c0a0,0,-1);
             float bx=rr-dp(12);
             r.set(bx-dp(44),t+dp(14),bx,t+rowH-dp(14));ui.button(c,r,Icons.TRASH,null,Ui.DANGER);ui.hit(r,H_DEL+i);bx-=dp(52);
-            r.set(bx-dp(88),t+dp(14),bx,t+rowH-dp(14));ui.button(c,r,Icons.SECTORS,"Edit",Ui.NORMAL);ui.hit(r,H_EDIT+100+i);bx-=dp(96);
-            r.set(bx-dp(88),t+dp(14),bx,t+rowH-dp(14));ui.button(c,r,Icons.PLAY,"Play",Ui.PRIMARY);ui.hit(r,H_PLAY+100+i);}
+            r.set(bx-dp(88),t+dp(14),bx,t+rowH-dp(14));ui.button(c,r,Icons.SECTORS,"Edit",Ui.NORMAL);ui.hit(r,H_EDITC+i);bx-=dp(96);
+            r.set(bx-dp(88),t+dp(14),bx,t+rowH-dp(14));ui.button(c,r,Icons.PLAY,"Play",Ui.PRIMARY);ui.hit(r,H_PLAYC+i);}
         c.restoreToCount(save);
     }
     private void skills(Canvas c,float w,float h){
@@ -155,9 +155,9 @@ final class MenuView extends View {
     }
     private static final int[] LINES={200,270,360,540};
     private void settings(Canvas c,float w,float h){
-        float l=dp(80),rr=Math.min(w-dp(40),l+dp(560)),rowH=dp(58),gap=dp(10),top=dp(96);
-        String[] labels={"Look speed","Invert look","Render resolution","Show frame rate"};
-        String[] vals={String.format(java.util.Locale.US,"%.1f",Game.lookSens*1000),Game.invertLook?"On":"Off",Game.RENDER_LINES+" lines"+(Game.RENDER_LINES==270?" (like RPG Pocket Editor)":""),Hud.showFps?"On":"Off"};
+        float l=dp(80),rr=Math.min(w-dp(40),l+dp(560)),rowH=dp(50),gap=dp(8),top=dp(88);
+        String[] labels={"Look speed","Invert look","Render resolution","Show frame rate","Aim assist"};
+        String[] vals={String.format(java.util.Locale.US,"%.1f",Game.lookSens*1000),Game.invertLook?"On":"Off",Game.RENDER_LINES+" lines"+(Game.RENDER_LINES==270?" (like RPG Pocket Editor)":""),Hud.showFps?"On":"Off",Game.aimAssist?"On":"Off"};
         for(int i=0;i<labels.length;i++){float t=top+i*(rowH+gap);
             ui.round(c,l,t,rr,t+rowH,dp(10),0xb0140808);ui.outline(c,l,t,rr,t+rowH,dp(10),0x40ffffff,dp(1));
             ui.text(c,labels[i],l+dp(20),t+rowH*.5f+dp(6),16,0xfff4e8e0,1,-1);
@@ -204,8 +204,8 @@ final class MenuView extends View {
             if(id>=H_EDIT&&id<H_EDIT+Maps.count()){SectorMap m=Maps.campaign(id-H_EDIT);m.name=m.name+" (copy)";host.editMap(null,m);return;}}
         if(page==CUSTOM){
             if(id==H_NEW){newLevel();return;}
-            if(id>=H_PLAY+100&&id<H_PLAY+100+customs.size()){pendingCustom=customs.get(id-H_PLAY-100).id;pendingCampaign=-1;skillFrom=CUSTOM;show(SKILL);return;}
-            if(id>=H_EDIT+100&&id<H_EDIT+100+customs.size()){host.editMap(customs.get(id-H_EDIT-100).id,null);return;}
+            if(id>=H_PLAYC&&id<H_PLAYC+customs.size()){pendingCustom=customs.get(id-H_PLAYC).id;pendingCampaign=-1;skillFrom=CUSTOM;show(SKILL);return;}
+            if(id>=H_EDITC&&id<H_EDITC+customs.size()){host.editMap(customs.get(id-H_EDITC).id,null);return;}
             if(id>=H_DEL&&id<H_DEL+customs.size()){MapStore.Entry en=customs.get(id-H_DEL);
                 new AlertDialog.Builder(getContext(),android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Delete \""+en.name+"\"?").setMessage("This can't be undone.")
                     .setPositiveButton("Delete",(d,i)->{store.delete(en.id);show(CUSTOM);}).setNegativeButton("Cancel",null).show();return;}}
@@ -214,6 +214,7 @@ final class MenuView extends View {
             else if(id==H_SET+1)Game.invertLook=!Game.invertLook;
             else if(id==H_SET+2){int k=0;for(int i=0;i<LINES.length;i++)if(LINES[i]==Game.RENDER_LINES)k=i;Game.RENDER_LINES=LINES[(k+1)%LINES.length];}
             else if(id==H_SET+3)Hud.showFps=!Hud.showFps;
+            else if(id==H_SET+4)Game.aimAssist=!Game.aimAssist;
             saveSettings();return;}
         if(id==H_ITEM+20){host.resume();return;}
         if(id==H_ITEM+21){host.restart();return;}

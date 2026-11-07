@@ -71,13 +71,14 @@ final class Level {
         for(SectorMap.Line L:map.lines){SectorMap.Vertex a=map.vertices.get(L.a),b=map.vertices.get(L.b);
             SectorMap.Sector F=L.front>=0?map.sectors.get(L.front):null,B=L.back>=0?map.sectors.get(L.back):null;
             if(F==null&&B==null)continue;
-            if(B==null){wall(out,F.wallTex,a.x,a.y,b.x,b.y,F.floor,F.ceil);continue;}
-            if(F==null){wall(out,B.wallTex,b.x,b.y,a.x,a.y,B.floor,B.ceil);continue;}
+            int ab=map.wallTexture(L.a,L.b,-1),ba=map.wallTexture(L.b,L.a,-1);   // painted faces (from the 3D editor)
+            if(B==null){wall(out,ab>=0?ab:F.wallTex,a.x,a.y,b.x,b.y,F.floor,F.ceil);continue;}
+            if(F==null){wall(out,ba>=0?ba:B.wallTex,b.x,b.y,a.x,a.y,B.floor,B.ceil);continue;}
             // steps and ledges below, lintels above; each face looks into the sector it is seen from
-            if(B.floor>F.floor+1e-3f)wall(out,B.wallTex,a.x,a.y,b.x,b.y,F.floor,Math.min(B.floor,F.ceil));
-            if(F.floor>B.floor+1e-3f)wall(out,F.wallTex,b.x,b.y,a.x,a.y,B.floor,Math.min(F.floor,B.ceil));
-            if(B.ceil<F.ceil-1e-3f)wall(out,B.wallTex,a.x,a.y,b.x,b.y,Math.max(B.ceil,F.floor),F.ceil);
-            if(F.ceil<B.ceil-1e-3f)wall(out,F.wallTex,b.x,b.y,a.x,a.y,Math.max(F.ceil,B.floor),B.ceil);}
+            if(B.floor>F.floor+1e-3f)wall(out,ab>=0?ab:B.wallTex,a.x,a.y,b.x,b.y,F.floor,Math.min(B.floor,F.ceil));
+            if(F.floor>B.floor+1e-3f)wall(out,ba>=0?ba:F.wallTex,b.x,b.y,a.x,a.y,B.floor,Math.min(F.floor,B.ceil));
+            if(B.ceil<F.ceil-1e-3f)wall(out,ab>=0?ab:B.wallTex,a.x,a.y,b.x,b.y,Math.max(B.ceil,F.floor),F.ceil);
+            if(F.ceil<B.ceil-1e-3f)wall(out,ba>=0?ba:F.wallTex,b.x,b.y,a.x,a.y,Math.max(F.ceil,B.floor),B.ceil);}
         ArrayList<float[]>[] res=new ArrayList[Tex.COUNT];
         for(int i=0;i<res.length;i++){res[i]=new ArrayList<>();res[i].add(out[i].toArray());}
         return res;
@@ -145,6 +146,26 @@ final class Level {
         return f;
     }
     boolean inside(float x,float y,float z){SectorMap.Sector s=sectorAt(x,y);return s==null||z<s.floor||z>s.ceil;}
+
+    // ------------------------------------------------------------------ picking (the 3D editor)
+    static final int PICK_WALL=1,PICK_FLOOR=2,PICK_CEIL=3;
+    /**
+     * The surface a ray hits: {kind, sector, a, b, x, y, z} where a→b is the wall face (facing the ray), sector is the
+     * floor/ceiling's sector or the sector the wall face looks into; null if nothing.
+     */
+    float[] pick(float ox,float oy,float oz,float dx,float dy,float dz,float max){
+        float[] h=ray(ox,oy,oz,dx,dy,dz,max);if(h==null)return null;
+        float hx=h[0],hy=h[1],hz=h[2];
+        if(h[5]>.5f||h[5]<-.5f){int s=map.sectorAt(hx,hy);return s<0?null:new float[]{h[5]>0?PICK_FLOOR:PICK_CEIL,s,-1,-1,hx,hy,hz};}
+        int best=-1;float bd=.08f;
+        for(int li:map.linesNear(hx,hy)){SectorMap.Line L=map.lines.get(li);SectorMap.Vertex a=map.vertices.get(L.a),b=map.vertices.get(L.b);float d=SectorMap.segDist(hx,hy,a.x,a.y,b.x,b.y);if(d<bd){bd=d;best=li;}}
+        if(best<0)return null;
+        SectorMap.Line L=map.lines.get(best);SectorMap.Vertex a=map.vertices.get(L.a),b=map.vertices.get(L.b);
+        float lx=-(b.y-a.y),ly=b.x-a.x;   // left of a→b
+        boolean leftFaces=lx*(ox-hx)+ly*(oy-hy)>0;
+        int fa=leftFaces?L.a:L.b,fb=leftFaces?L.b:L.a,sec=leftFaces?L.front:L.back;
+        return new float[]{PICK_WALL,sec,fa,fb,hx,hy,hz};
+    }
 
     // ------------------------------------------------------------------ ray cast
     /** Casts a ray; returns {x,y,z, nx,ny,nz, distance, material} or null. */

@@ -17,7 +17,7 @@ final class SectorMap {
     static final String[] SPECIAL_NAMES={"None","Lava (hurts)","Exit","Secret","Flickering lights"};
     // thing types
     static final int T_DEMON=0,T_HEALTH=1,T_SHELLS=2,T_LAMP_WARM=3,T_LAMP_RED=4,T_LAMP_BLUE=5,T_LAMP_WHITE=6,T_PLAYER=7;
-    static final String[] THING_NAMES={"Demon","Health orb","Shells","Lamp · warm","Lamp · hellfire","Lamp · cold blue","Lamp · white","Player start"};
+    static final String[] THING_NAMES={"Demon","Health orb","Energy cells","Lamp · warm","Lamp · hellfire","Lamp · cold blue","Lamp · white","Player start"};
     static final int[] LAMP_RGB={0,0,0,0xffc890,0xff5020,0x7aa8ff,0xffffff};
     /** Textures a map may use (indices into Tex). */
     static final int[] MAP_TEXTURES={Tex.BRICK,Tex.METAL_PANEL,Tex.FLOOR_TILES,Tex.DIAMOND_PLATE,Tex.CONCRETE,Tex.CRATE,Tex.LIGHT,Tex.PILLAR,Tex.LAVA};
@@ -37,6 +37,11 @@ final class SectorMap {
     ArrayList<Sector> sectors=new ArrayList<>();
     ArrayList<Thing> things=new ArrayList<>();
     float playerX=2,playerY=2,facing=0;
+    /** Per-wall texture overrides, keyed by the directed edge whose left side the wall faces (wallKey(a,b)). */
+    HashMap<Long,Integer> wallTex=new HashMap<>();
+    static long wallKey(int a,int b){return ((long)a<<32)|(b&0xffffffffL);}
+    /** The texture of the wall face along a→b (facing its left side): its override, or the given sector default. */
+    int wallTexture(int a,int b,int fallback){Integer t=wallTex.get(wallKey(a,b));return t!=null?t:fallback;}
 
     int addVertex(float x,float y){for(int i=0;i<vertices.size();i++){Vertex v=vertices.get(i);if(Math.abs(v.x-x)<.01f&&Math.abs(v.y-y)<.01f)return i;}vertices.add(new Vertex(x,y));return vertices.size()-1;}
 
@@ -48,6 +53,7 @@ final class SectorMap {
         for(Vertex v:vertices)sb.append("v ").append(f(v.x)).append(' ').append(f(v.y)).append('\n');
         for(Sector s:sectors){sb.append("s ").append(f(s.floor)).append(' ').append(f(s.ceil)).append(' ').append(s.floorTex).append(' ').append(s.ceilTex).append(' ').append(s.wallTex).append(' ').append(s.special).append(' ').append(s.tag).append(' ').append(s.loop.size());
             for(int i:s.loop)sb.append(' ').append(i);sb.append('\n');}
+        for(java.util.Map.Entry<Long,Integer> e:wallTex.entrySet())sb.append("w ").append((int)(e.getKey()>>32)).append(' ').append((int)(long)e.getKey()).append(' ').append(e.getValue()).append('\n');
         for(Thing t:things)sb.append("t ").append(t.type).append(' ').append(f(t.x)).append(' ').append(f(t.y)).append(' ').append(f(t.angle)).append('\n');
         return sb.toString();
     }
@@ -62,6 +68,7 @@ final class SectorMap {
                 case "v":m.vertices.add(new Vertex(Float.parseFloat(p[1]),Float.parseFloat(p[2])));break;
                 case "s":{Sector s=new Sector();s.floor=Float.parseFloat(p[1]);s.ceil=Float.parseFloat(p[2]);s.floorTex=Integer.parseInt(p[3]);s.ceilTex=Integer.parseInt(p[4]);s.wallTex=Integer.parseInt(p[5]);
                     s.special=Integer.parseInt(p[6]);s.tag=Integer.parseInt(p[7]);int n=Integer.parseInt(p[8]);for(int i=0;i<n;i++)s.loop.add(Integer.parseInt(p[9+i]));m.sectors.add(s);break;}
+                case "w":m.wallTex.put(wallKey(Integer.parseInt(p[1]),Integer.parseInt(p[2])),Integer.parseInt(p[3]));break;
                 case "t":m.things.add(new Thing(Integer.parseInt(p[1]),Float.parseFloat(p[2]),Float.parseFloat(p[3]),Float.parseFloat(p[4])));break;
             }}
         return m;

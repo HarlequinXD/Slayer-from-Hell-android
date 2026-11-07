@@ -8,10 +8,14 @@ import java.util.ArrayList;
  * hits on her, deaths) for the game to turn into sound and effects. Pure Java, so the AI runs in the unit tests.
  */
 final class Enemies {
-    static final int EV_ROAR=0,EV_CHARGE=1,EV_SHOOT=2,EV_EXPLODE=3,EV_HIT_PLAYER=4,EV_PAIN=5,EV_DIE=6,EV_STEP=7,EV_HIT=8;
+    static final int EV_ROAR=0,EV_CHARGE=1,EV_SHOOT=2,EV_EXPLODE=3,EV_HIT_PLAYER=4,EV_PAIN=5,EV_DIE=6,EV_STEP=7,EV_HIT=8,EV_BOLT_HIT=9,EV_BOLT_BURST=10;
     /** An event at a position (for sound and effects); demon = index or -1. */
     static final class Event {final int type,demon;final float x,y,z,dx,dy,dz;Event(int t,int d,float x,float y,float z,float dx,float dy,float dz){type=t;demon=d;this.x=x;this.y=y;this.z=z;this.dx=dx;this.dy=dy;this.dz=dz;}}
     static final class Fireball {float x,y,z,vx,vy,vz,life;int owner;boolean alive=true;}
+    /** The warden's green plasma bolts. */
+    static final class Bolt {float x,y,z,vx,vy,vz,life=2.5f;boolean alive=true;}
+    static final float BOLT_SPEED=34f,BOLT_DAMAGE=30f,BOLT_SPLASH=10f;
+    final ArrayList<Bolt> bolts=new ArrayList<>();
 
     static final float FIREBALL_SPEED=10.5f,FIREBALL_DAMAGE=12f,SPLASH_DAMAGE=7f,SPLASH_RADIUS=1.6f;
     final Level L;final Nav nav;final Player player;
@@ -28,7 +32,7 @@ final class Enemies {
         reset();}
 
     /** Everyone back to their spawn, fireballs gone (when she dies and respawns). */
-    void reset(){fireballs.clear();events.clear();attackers=0;for(Demon d:demons)d.reset(L);attackers=0;navTimer=0;}
+    void reset(){fireballs.clear();bolts.clear();events.clear();attackers=0;for(Demon d:demons)d.reset(L);attackers=0;navTimer=0;}
     int alive(){int n=0;for(Demon d:demons)if(!d.dead)n++;return n;}
 
     void event(int type,Demon d){float[] e=d.eye();events.add(new Event(type,d.id,e[0],e[1],e[2],0,0,0));}
@@ -37,8 +41,10 @@ final class Enemies {
         navTimer-=dt;if(navTimer<=0){nav.target(player.x,player.y);navTimer=.2f;}
         for(Demon d:demons){d.update(dt,time,L);if(!d.dead&&d.rig.steps>0&&d.body.onGround)events.add(new Event(EV_STEP,d.id,d.body.x,d.body.y,d.body.z,0,0,0));}
         separate();
-        updateFireballs(dt);
+        updateFireballs(dt);updateBolts(dt);
     }
+    /** The 3D editor: everyone posed where they stand. */
+    void pose(float dt,float time){for(Demon d:demons)d.pose(dt,time,L);}
     /** A gunshot: every demon within earshot (path distance) knows where she is. */
     void hear(float x,float y,float z,float radius){for(Demon d:demons){if(d.dead)continue;float pd=nav.distAt(d.body.x,d.body.y);
         float straight=(float)Math.hypot(d.body.x-x,d.body.y-y);if(Math.min(pd,straight*1.6f)<radius)d.ai.hear(x,y,z);}}
@@ -87,6 +93,23 @@ final class Enemies {
         events.add(new Event(EV_EXPLODE,f.owner,bx,by,bz,-f.vx/FIREBALL_SPEED,-f.vy/FIREBALL_SPEED,-f.vz/FIREBALL_SPEED));
         float dx=player.x-bx,dy=player.y-by,dz=player.z+.9f-bz;float d=(float)Math.sqrt(dx*dx+dy*dy+dz*dz);
         if(d<SPLASH_RADIUS){player.health-=SPLASH_DAMAGE*(1-d/SPLASH_RADIUS);player.hurtFlash=Math.max(player.hurtFlash,.6f);}
+    }
+
+    /** A plasma bolt from her hand cannon, from the muzzle along d (unit). */
+    void bolt(float[] m,float[] d){Bolt b=new Bolt();b.x=m[0];b.y=m[1];b.z=m[2];b.vx=d[0]*BOLT_SPEED;b.vy=d[1]*BOLT_SPEED;b.vz=d[2]*BOLT_SPEED;bolts.add(b);}
+    private void updateBolts(float dt){
+        for(Bolt b:bolts){if(!b.alive)continue;b.life-=dt;if(b.life<=0){b.alive=false;continue;}
+            int sub=6;float h=dt/sub;
+            for(int s=0;s<sub&&b.alive;s++){float px=b.x,py=b.y,pz=b.z;b.x+=b.vx*h;b.y+=b.vy*h;b.z+=b.vz*h;
+                float l=BOLT_SPEED*h;float[] hit=ray(px,py,pz,b.vx/BOLT_SPEED,b.vy/BOLT_SPEED,b.vz/BOLT_SPEED,l+.12f);
+                if(hit!=null){Demon d=demons.get((int)hit[1]);float dmg=BOLT_DAMAGE*(hit[2]>0?1.8f:1);d.damage(dmg,b.vx/BOLT_SPEED,b.vy/BOLT_SPEED);
+                    float t=hit[0];events.add(new Event(EV_BOLT_HIT,d.id,px+b.vx/BOLT_SPEED*t,py+b.vy/BOLT_SPEED*t,pz+b.vz/BOLT_SPEED*t,b.vx/BOLT_SPEED,b.vy/BOLT_SPEED,b.vz/BOLT_SPEED));b.alive=false;break;}
+                if(L.inside(b.x,b.y,b.z)){b.alive=false;
+                    events.add(new Event(EV_BOLT_BURST,-1,px,py,pz,-b.vx/BOLT_SPEED,-b.vy/BOLT_SPEED,-b.vz/BOLT_SPEED));
+                    for(Demon d:demons){if(d.dead)continue;float dx=d.body.x-px,dy=d.body.y-py,dz=d.body.z+1-pz;float dd=(float)Math.sqrt(dx*dx+dy*dy+dz*dz);
+                        if(dd<1.6f)d.damage(BOLT_SPLASH*(1-dd/1.6f),dx/Math.max(dd,.01f),dy/Math.max(dd,.01f));}
+                    break;}}}
+        bolts.removeIf(b->!b.alive);
     }
 
     // ---------------------------------------------------------------- her weapons against them

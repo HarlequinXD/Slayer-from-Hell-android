@@ -110,4 +110,20 @@ public class SectorTest {
         assertEquals(1,st.list().size());assertEquals("Test level",st.list().get(0).name);
         assertEquals(m.save(),st.load(id).save());assertTrue(st.delete(id));assertEquals(0,st.list().size());
     }
+    @Test public void paintedWallsAndPicking(){
+        MapEditor ed=room();SectorMap m=ed.map;Level L=new Level(m.copy());
+        float[] hit=L.pick(1,1,1,1,0,0,20);   // east wall from inside the room
+        assertNotNull(hit);assertEquals(Level.PICK_WALL,(int)hit[0]);assertEquals(0,(int)hit[1]);
+        hit=L.pick(1,1,1,0,0,-1,20);assertEquals(Level.PICK_FLOOR,(int)hit[0]);assertEquals(0,(int)hit[1]);
+        hit=L.pick(1,1,1,0,0,1,20);assertEquals(Level.PICK_CEIL,(int)hit[0]);
+        float[] wall=L.pick(1,1,1,1,0,0,20);int a=(int)wall[2],b=(int)wall[3];
+        assertTrue(ed.setWallTexture(a,b,Tex.METAL_PANEL));
+        SectorMap back=SectorMap.load(m.save());assertEquals(Tex.METAL_PANEL,back.wallTexture(a,b,-1));
+        java.util.ArrayList<float[]>[] g=new Level(m.copy()).build();assertTrue("the painted wall is drawn in metal",g[Tex.METAL_PANEL].get(0).length>0);
+        // splitting the painted wall keeps the paint on both halves
+        SectorMap.Vertex va=m.vertices.get(a),vb=m.vertices.get(b);int e=-1;SectorMap.Sector s0=m.sectors.get(0);for(int k=0;k<s0.loop.size();k++){int x=s0.loop.get(k),y=s0.loop.get((k+1)%s0.loop.size());if(x==a&&y==b||x==b&&y==a)e=k;}
+        assertTrue(e>=0);assertTrue(ed.error,ed.splitWall(0,e,(va.x+vb.x)/2,Math.round((va.y+vb.y)/2)));
+        int painted=0;for(Integer t:m.wallTex.values())if(t==Tex.METAL_PANEL)painted++;assertEquals(2,painted);
+        assertTrue(ed.undo());assertEquals(1,ed.map.wallTex.size());
+    }
 }

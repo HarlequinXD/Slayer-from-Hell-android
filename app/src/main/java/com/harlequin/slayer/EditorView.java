@@ -21,7 +21,7 @@ import java.util.ArrayList;
  * Changes are validated (MapEditor), undoable and saved automatically.
  */
 final class EditorView extends View {
-    interface Host {void exitEditor();void testPlay(SectorMap m);}
+    interface Host {void exitEditor();void testPlay(SectorMap m);void open3D();}
     private static final int SECTORS=0,ENTITIES=1;
     // sector tools (cursor + Apply) and immediate actions
     private static final int DRAW=1,LINE=2,RECT=3,STAIRS=4,SELECT=5,MOVE=6,SPLIT=7,EXTRUDE=8,DUPLICATE=9,DELETE=10,SPECIAL=11,START=12,PILLAR=13;
@@ -109,23 +109,23 @@ final class EditorView extends View {
     private void drawToast(Canvas c){
         if(System.currentTimeMillis()>messageUntil||message.isEmpty())return;
         float tw=Math.min(ui.measure(message,12.5f,1)+dp(32),mapR()-mapL()-dp(20)),cx=(mapL()+mapR())*.5f,t=mapT()+dp(12);
-        ui.pill(c,cx-tw*.5f,t,cx+tw*.5f,t+dp(32),0xf2262c34);ui.textMid(c,ui.ellipsize(message,12.5f,1,tw-dp(24)),cx,t+dp(16),12.5f,Ui.TEXT,1,0);
+        ui.pill(c,cx-tw*.5f,t,cx+tw*.5f,t+dp(32),0xf2241210);ui.textMid(c,ui.ellipsize(message,12.5f,1,tw-dp(24)),cx,t+dp(16),12.5f,Ui.TEXT,1,0);
     }
     private void drawTopBar(Canvas c){
-        ui.rect(c,0,0,w,toolbarH,Ui.SURFACE);ui.hline(c,0,w,toolbarH-1,Ui.BORDER);
+        ui.hellPanel(c,0,0,w,toolbarH);ui.hline(c,0,w,toolbarH-1,0x80ff5a1a);
         float bh=dp(36),top=(toolbarH-bh)*.5f;
         r.set(dp(8),top,dp(8)+bh,top+bh);ui.button(c,r,Icons.ARROW_LEFT,null,Ui.GHOST);ui.hit(r,H_BACK);
         float x=dp(8)+bh+dp(8);
-        ui.text(c,"LEVEL EDITOR",x,top+dp(14),10,Ui.TEXT_3,1,-1);
-        String nm=ui.ellipsize(map().name,15,1,dp(170));ui.text(c,nm,x,top+dp(31),15,Ui.TEXT,1,-1);
+        ui.glowText(c,"LEVEL EDITOR",x,top+dp(14),10,0xffff7a3a,-1);
+        String nm=ui.ellipsize(map().name,15,1,dp(170));ui.text(c,nm,x,top+dp(31),15,Ui.TEXT,2,-1);
         ui.hit(x,top,x+ui.measure(nm,15,1)+dp(10),top+bh,H_NAME);
         // mode tabs
-        float tabW=dp(104),tl=Math.max(x+dp(190),w*.5f-tabW);
-        for(int i=0;i<2;i++){r.set(tl+i*tabW,top,tl+(i+1)*tabW-dp(4),top+bh);ui.button(c,r,i==0?Icons.SECTORS:Icons.ENTITIES,i==0?"Sectors":"Entities",mode==i?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_TAB+i);}
+        float tabW=dp(100),tl=Math.max(x+dp(190),w*.5f-tabW*1.5f);
+        for(int i=0;i<3;i++){r.set(tl+i*tabW,top,tl+(i+1)*tabW-dp(4),top+bh);ui.button(c,r,i==0?Icons.SECTORS:i==1?Icons.ENTITIES:Icons.CUBE,i==0?"Sectors":i==1?"Entities":"3D View",mode==i?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_TAB+i);}
         float rr=w-dp(8);
         r.set(rr-dp(92),top,rr,top+bh);ui.button(c,r,Icons.PLAY,"Play",Ui.PRIMARY);ui.hit(r,H_PLAY);rr-=dp(100);
         r.set(rr-dp(88),top,rr,top+bh);ui.button(c,r,Icons.SAVE,"Save",Ui.NORMAL);ui.hit(r,H_SAVE);rr-=dp(96);
-        if(rr-bh*2>tl+tabW*2+dp(8)){
+        if(rr-bh*2>tl+tabW*3+dp(8)){
             r.set(rr-bh,top,rr,top+bh);ui.button(c,r,Icons.REDO,null,ed.canRedo()?Ui.NORMAL:Ui.DISABLED);ui.hit(r,H_REDO);rr-=bh+dp(6);
             r.set(rr-bh,top,rr,top+bh);ui.button(c,r,Icons.UNDO,null,ed.canUndo()?Ui.NORMAL:Ui.DISABLED);ui.hit(r,H_UNDO);}
     }
@@ -143,18 +143,19 @@ final class EditorView extends View {
         if(s.ceil-s.floor<.05f)return 0x55303640;   // pillar
         if(s.special==SectorMap.SP_LAVA||s.floorTex==Tex.LAVA)return 0x40ff6a20;
         if(s.special==SectorMap.SP_EXIT)return 0x403ecf8e;
-        float t=Math.max(0,Math.min(1,(s.floor+1.5f)/4.5f));int a=(int)(0x1c+t*0x30);return (a<<24)|0x8fa3b8;
+        float t=Math.max(0,Math.min(1,(s.floor+1.5f)/4.5f));int a=(int)(0x20+t*0x34);return (a<<24)|0xc89a86;
     }
     private void drawMap(Canvas c){
         updateView();SectorMap m=map();
         float L=mapL(),R=mapR(),T=mapT(),B=mapB();
         int save=c.save();c.clipRect(L,T,R,B);
         ui.rect(c,L,T,R,B,Ui.CANVAS);
+        p.setShader(new android.graphics.RadialGradient((L+R)*.5f,B+(B-T)*.3f,(B-T)*1.1f,0x38ff3a0a,0x00ff3a0a,android.graphics.Shader.TileMode.CLAMP));c.drawRect(L,T,R,B,p);p.setShader(null);
         float g=snap()<1?1:snap();
         int x0=(int)Math.floor(wx(L)/g)-1,x1=(int)Math.ceil(wx(R)/g)+1,y0=(int)Math.floor(wy(B)/g)-1,y1=(int)Math.ceil(wy(T)/g)+1;
         float lw=Math.max(1,dp(.75f));
-        for(int i=x0;i<=x1;i++){float wxv=i*g;int col=Math.abs(wxv)<1e-4f?0xff39424e:Math.round(wxv)%4==0?0xff2a3139:0xff21262c;if(col==0xff21262c&&cell*g<dp(7))continue;ui.rect(c,sx(wxv),T,sx(wxv)+lw,B,col);}
-        for(int i=y0;i<=y1;i++){float wyv=i*g;int col=Math.abs(wyv)<1e-4f?0xff39424e:Math.round(wyv)%4==0?0xff2a3139:0xff21262c;if(col==0xff21262c&&cell*g<dp(7))continue;ui.rect(c,L,sy(wyv),R,sy(wyv)+lw,col);}
+        for(int i=x0;i<=x1;i++){float wxv=i*g;int col=Math.abs(wxv)<1e-4f?0xff4a2a20:Math.round(wxv)%4==0?0xff2c1913:0xff1e110d;if(col==0xff1e110d&&cell*g<dp(7))continue;ui.rect(c,sx(wxv),T,sx(wxv)+lw,B,col);}
+        for(int i=y0;i<=y1;i++){float wyv=i*g;int col=Math.abs(wyv)<1e-4f?0xff4a2a20:Math.round(wyv)%4==0?0xff2c1913:0xff1e110d;if(col==0xff1e110d&&cell*g<dp(7))continue;ui.rect(c,L,sy(wyv),R,sy(wyv)+lw,col);}
         p.setShader(null);p.setStyle(Paint.Style.FILL);
         int curSec=sectorUnderCursor();
         // sectors, biggest first so nested ones draw on top
@@ -163,34 +164,34 @@ final class EditorView extends View {
         for(int k:order){SectorMap.Sector s=m.sectors.get(k);if(s.loop.size()<3)continue;path.reset();
             for(int j=0;j<s.loop.size();j++){SectorMap.Vertex v=m.vertices.get(s.loop.get(j));if(j==0)path.moveTo(sx(v.x),sy(v.y));else path.lineTo(sx(v.x),sy(v.y));}path.close();
             boolean sel=mode==SECTORS&&selKind==1&&k==selSector;
-            int col=sel?0x473d8bfd:sectorColor(k,s);
-            if(mode==SECTORS&&k==curSec&&!sel&&(tool==SELECT||tool==DELETE||tool==SPECIAL||tool==STAIRS||tool==PILLAR||(tool==DUPLICATE&&stage==0)||(tool==MOVE&&stage==0)||toolPage==2))col=0x5a8fa3b8;
-            p.setColor(0xff1a1e23);c.drawPath(path,p);p.setColor(col);c.drawPath(path,p);
+            int col=sel?0x50ff5a1a:sectorColor(k,s);
+            if(mode==SECTORS&&k==curSec&&!sel&&(tool==SELECT||tool==DELETE||tool==SPECIAL||tool==STAIRS||tool==PILLAR||(tool==DUPLICATE&&stage==0)||(tool==MOVE&&stage==0)||toolPage==2))col=0x60d8a890;
+            p.setColor(0xff140b09);c.drawPath(path,p);p.setColor(col);c.drawPath(path,p);
             if(cell>dp(22)){float[] ce=m.centroid(s);if(m.sectorAt(ce[0],ce[1])==k){
                 ui.textMid(c,EditorViewFmt.f(s.floor)+(s.ceil-s.floor<.05f?" ▮":" / "+EditorViewFmt.f(s.ceil)),sx(ce[0]),sy(ce[1]),9.5f,0x99ffffff,1,0);
                 if(s.special==SectorMap.SP_EXIT)ui.icon(c,Icons.FLAG,sx(ce[0]),sy(ce[1])-dp(14),13,0xcc3ecf8e);}}}
         p.setStrokeCap(Paint.Cap.ROUND);
         for(SectorMap.Line ln:m.lines){SectorMap.Vertex a=m.vertices.get(ln.a),b=m.vertices.get(ln.b);boolean two=ln.back>=0;
-            p.setColor(two?0xffd99a3e:0xffd6dce4);p.setStrokeWidth(two?dp(1.5f):dp(2));c.drawLine(sx(a.x),sy(a.y),sx(b.x),sy(b.y),p);}
+            p.setColor(two?0xffff8a3a:0xfff0ddd0);p.setStrokeWidth(two?dp(1.5f):dp(2));c.drawLine(sx(a.x),sy(a.y),sx(b.x),sy(b.y),p);}
         if(mode==SECTORS)drawSelection(c);
         p.setStrokeCap(Paint.Cap.BUTT);
         float vs=Math.max(dp(2.5f),Math.min(dp(4),cell*.09f));
         for(int i=0;i<m.vertices.size();i++){SectorMap.Vertex v=m.vertices.get(i);
             boolean hot=mode==SECTORS&&((selKind==3&&i==selVertex)||contains(moveIds,i)&&stage==1);
-            ui.rect(c,sx(v.x)-vs-dp(1),sy(v.y)-vs-dp(1),sx(v.x)+vs+dp(1),sy(v.y)+vs+dp(1),0xff15181c);
-            ui.rect(c,sx(v.x)-vs,sy(v.y)-vs,sx(v.x)+vs,sy(v.y)+vs,hot?Ui.ORANGE:0xffeef2f6);}
+            ui.rect(c,sx(v.x)-vs-dp(1),sy(v.y)-vs-dp(1),sx(v.x)+vs+dp(1),sy(v.y)+vs+dp(1),0xff0e0807);
+            ui.rect(c,sx(v.x)-vs,sy(v.y)-vs,sx(v.x)+vs,sy(v.y)+vs,hot?Ui.ORANGE:0xfff2dccf);}
         if(mode==SECTORS&&!pending.isEmpty()){
             p.setStyle(Paint.Style.STROKE);p.setColor(Ui.ACCENT);p.setStrokeWidth(dp(2));path.reset();
             for(int i=0;i<pending.size();i++){float[] v=pending.get(i);if(i==0)path.moveTo(sx(v[0]),sy(v[1]));else path.lineTo(sx(v[0]),sy(v[1]));}
             c.drawPath(path,p);float[] last=pending.get(pending.size()-1);
-            p.setPathEffect(new DashPathEffect(new float[]{dp(5),dp(4)},0));p.setColor(0xaa3d8bfd);c.drawLine(sx(last[0]),sy(last[1]),sx(cursorX),sy(cursorY),p);p.setPathEffect(null);p.setStyle(Paint.Style.FILL);
-            for(int i=0;i<pending.size();i++){float[] v=pending.get(i);p.setColor(0xff15181c);c.drawCircle(sx(v[0]),sy(v[1]),dp(5.5f),p);p.setColor(i==0?Ui.GREEN:Ui.ACCENT);c.drawCircle(sx(v[0]),sy(v[1]),dp(4),p);}}
+            p.setPathEffect(new DashPathEffect(new float[]{dp(5),dp(4)},0));p.setColor(0xaaff6a2a);c.drawLine(sx(last[0]),sy(last[1]),sx(cursorX),sy(cursorY),p);p.setPathEffect(null);p.setStyle(Paint.Style.FILL);
+            for(int i=0;i<pending.size();i++){float[] v=pending.get(i);p.setColor(0xff0e0807);c.drawCircle(sx(v[0]),sy(v[1]),dp(5.5f),p);p.setColor(i==0?Ui.GREEN:Ui.ACCENT);c.drawCircle(sx(v[0]),sy(v[1]),dp(4),p);}}
         drawThings(c);
         // previews for two-stage tools
         if(mode==SECTORS&&stage==1){
             p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.5f));p.setColor(Ui.ACCENT);p.setPathEffect(new DashPathEffect(new float[]{dp(6),dp(4)},0));
             if(tool==RECT){float l=sx(Math.min(anchorX,cursorX)),t=sy(Math.max(anchorY,cursorY)),rr=sx(Math.max(anchorX,cursorX)),b=sy(Math.min(anchorY,cursorY));
-                p.setStyle(Paint.Style.FILL);p.setColor(0x223d8bfd);p.setPathEffect(null);c.drawRect(l,t,rr,b,p);p.setStyle(Paint.Style.STROKE);p.setColor(Ui.ACCENT);p.setPathEffect(new DashPathEffect(new float[]{dp(6),dp(4)},0));c.drawRect(l,t,rr,b,p);}
+                p.setStyle(Paint.Style.FILL);p.setColor(0x26ff5a1a);p.setPathEffect(null);c.drawRect(l,t,rr,b,p);p.setStyle(Paint.Style.STROKE);p.setColor(Ui.ACCENT);p.setPathEffect(new DashPathEffect(new float[]{dp(6),dp(4)},0));c.drawRect(l,t,rr,b,p);}
             else if(tool==LINE){p.setStrokeWidth(dp(2.5f));p.setColor(Ui.ORANGE);c.drawLine(sx(anchorX),sy(anchorY),sx(cursorX),sy(cursorY),p);}
             else if(tool==DUPLICATE&&pickSector>=0&&pickSector<m.sectors.size()){SectorMap.Sector s=m.sectors.get(pickSector);path.reset();float dx=cursorX-anchorX,dy=cursorY-anchorY;
                 for(int j=0;j<s.loop.size();j++){SectorMap.Vertex v=m.vertices.get(s.loop.get(j));if(j==0)path.moveTo(sx(v.x+dx),sy(v.y+dy));else path.lineTo(sx(v.x+dx),sy(v.y+dy));}path.close();c.drawPath(path,p);}
@@ -237,7 +238,7 @@ final class EditorView extends View {
     }
     private void drawStatusBar(Canvas c){
         SectorMap m=map();float L=mapL(),R=mapR(),top=mapB(),cy=top+statusH*.5f;
-        ui.rect(c,L,top,R,h,Ui.SURFACE);ui.hline(c,L,R,top,Ui.BORDER);
+        ui.hellPanel(c,L,top,R,h);
         float x=L+dp(12);
         x=statusItem(c,x,cy,Icons.CROSSHAIR,EditorViewFmt.f(cursorX)+", "+EditorViewFmt.f(cursorY));
         x=statusItem(c,x,cy,Icons.GRID,"Snap "+EditorViewFmt.f(snap())+" m");
@@ -253,7 +254,7 @@ final class EditorView extends View {
     // ---------------------------------------------------------------- inspector (Sectors) and entity tools (Entities)
     private void drawInspector(Canvas c){
         float x0=mapR(),pad=dp(10),l=x0+pad,rr=w-pad;
-        ui.rect(c,x0,toolbarH,w,h,Ui.SURFACE);ui.vline(c,x0,toolbarH,h,Ui.BORDER);
+        ui.hellPanel(c,x0,toolbarH,w,h);ui.vline(c,x0,toolbarH,h,0x60ff5a1a);
         if(mode==SECTORS){
             float tt=toolbarH+dp(10),th=dp(30),tg=dp(5),tw=(rr-l-tg*2)/3f;
             for(int i=0;i<3;i++){float a=l+i*(tw+tg);r.set(a,tt,a+tw,tt+th);ui.button(c,r,-1,PAGE_NAMES[i],i==toolPage?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_PAGE+i);}
@@ -308,14 +309,14 @@ final class EditorView extends View {
     private void stat(Canvas c,float x,float y,String value,String label){ui.text(c,value,x,y,14,Ui.TEXT,1,-1);ui.text(c,label,x,y+dp(14),10.5f,Ui.TEXT_3);}
     private void drawEntityList(Canvas c){
         float pw=entPanelW(),pad=dp(10);
-        ui.rect(c,0,toolbarH,pw,h,Ui.SURFACE);ui.vline(c,pw-dp(1),toolbarH,h,Ui.BORDER);
-        float ht=toolbarH+dp(10);ui.caption(c,"Entities",pad,ht+dp(12),Ui.TEXT_3);
+        ui.hellPanel(c,0,toolbarH,pw,h);ui.vline(c,pw-dp(1),toolbarH,h,0x60ff5a1a);
+        float ht=toolbarH+dp(10);ui.caption(c,"Entities",pad,ht+dp(12),0xffd08060);
         float top=ht+dp(24),bottom=h,rowH=dp(48);
         float maxScroll=Math.max(0,ENTITY_LIST.length*rowH-(bottom-top)+dp(8));entScroll=Math.max(0,Math.min(maxScroll,entScroll));
         int save=c.save();c.clipRect(0,top,pw-dp(1),bottom);
         for(int i=0;i<ENTITY_LIST.length;i++){int t=ENTITY_LIST[i];float y=top+i*rowH-entScroll;if(y+rowH<top||y>bottom)continue;
             boolean sel=t==entType;
-            if(sel){ui.round(c,dp(6),y+dp(2),pw-dp(6),y+rowH-dp(2),dp(8),Ui.ACCENT_SOFT);ui.outline(c,dp(6),y+dp(2),pw-dp(6),y+rowH-dp(2),dp(8),0x993d8bfd,dp(1));}
+            if(sel){ui.round(c,dp(6),y+dp(2),pw-dp(6),y+rowH-dp(2),dp(8),Ui.ACCENT_SOFT);ui.outline(c,dp(6),y+dp(2),pw-dp(6),y+rowH-dp(2),dp(8),0xb0ff6a2a,dp(1));}
             ui.round(c,dp(12),y+dp(7),dp(46),y+rowH-dp(7),dp(6),Ui.BG);ui.icon(c,thingIcon(t),dp(29),y+rowH*.5f,18,thingColor(t));
             ui.text(c,ui.ellipsize(SectorMap.THING_NAMES[t],12.5f,1,pw-dp(64)),dp(54),y+dp(21),12.5f,Ui.TEXT,1,-1);
             String sub=t==SectorMap.T_PLAYER?"1 placed":count(t)+" placed";
@@ -326,18 +327,19 @@ final class EditorView extends View {
     private void drawCursorControls(Canvas c){
         float cx=dpadCX(),cy=dpadCY(),R=dpadR();
         p.setShader(null);p.setStyle(Paint.Style.FILL);
-        p.setColor(0x55000000);c.drawCircle(cx,cy+dp(3),R,p);p.setColor(0xe6252a31);c.drawCircle(cx,cy,R,p);
-        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1));p.setColor(0x24ffffff);c.drawCircle(cx,cy,R,p);c.drawCircle(cx,cy,R*.34f,p);p.setStyle(Paint.Style.FILL);
-        if(dpadDirection>=0){p.setColor(0x403d8bfd);r.set(cx-R,cy-R,cx+R,cy+R);c.drawArc(r,new float[]{225,315,45,135}[dpadDirection],90,true,p);p.setColor(0xe6252a31);c.drawCircle(cx,cy,R*.34f,p);}
+        p.setColor(0x55000000);c.drawCircle(cx,cy+dp(3),R,p);p.setColor(0xe6201110);c.drawCircle(cx,cy,R,p);
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.2f));p.setColor(0x70ff5a1a);c.drawCircle(cx,cy,R,p);p.setColor(0x30ff8a5a);c.drawCircle(cx,cy,R*.34f,p);p.setStyle(Paint.Style.FILL);
+        if(dpadDirection>=0){p.setColor(0x50ff5a1a);r.set(cx-R,cy-R,cx+R,cy+R);c.drawArc(r,new float[]{225,315,45,135}[dpadDirection],90,true,p);p.setColor(0xe6201110);c.drawCircle(cx,cy,R*.34f,p);}
         int[] icons={Icons.CHEVRON_UP,Icons.CHEVRON_RIGHT,Icons.CHEVRON_DOWN,Icons.CHEVRON_LEFT};
-        for(int i=0;i<4;i++){float ox=i==1?1:i==3?-1:0,oy=i==2?1:i==0?-1:0;ui.icon(c,icons[i],cx+ox*R*.67f,cy+oy*R*.67f,22,i==dpadDirection?0xff8fbcff:Ui.TEXT);}
+        for(int i=0;i<4;i++){float ox=i==1?1:i==3?-1:0,oy=i==2?1:i==0?-1:0;ui.icon(c,icons[i],cx+ox*R*.67f,cy+oy*R*.67f,22,i==dpadDirection?0xffffb080:Ui.TEXT);}
         p.setColor(0x33ffffff);c.drawCircle(cx,cy,dp(3),p);
         float ax=applyCX(),ay=applyCY(),ar=applyR();
-        p.setColor(0x66000000);c.drawCircle(ax,ay+dp(3),ar,p);p.setColor(Ui.ACCENT);c.drawCircle(ax,ay,ar,p);
+        p.setColor(0x66000000);c.drawCircle(ax,ay+dp(3),ar,p);p.setShadowLayer(dp(12),0,0,0xc0ff4000);p.setColor(Ui.ACCENT);c.drawCircle(ax,ay,ar,p);p.setShadowLayer(0,0,0,0);
+        p.setShader(new android.graphics.RadialGradient(ax,ay-ar*.3f,ar,0xffffa060,0xffd8380a,android.graphics.Shader.TileMode.CLAMP));c.drawCircle(ax,ay,ar,p);p.setShader(null);
         p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1));p.setColor(0x33ffffff);c.drawCircle(ax,ay,ar-dp(.5f),p);p.setStyle(Paint.Style.FILL);
         ui.icon(c,Icons.CHECK,ax,ay,26,0xffffffff);ui.hit(ax-ar-dp(6),ay-ar-dp(6),ax+ar+dp(6),ay+ar+dp(6),H_APPLY);
         String action=applyLabel();float tw=ui.measure(action,11.5f,1)+dp(22),pt=ay-ar-dp(40);
-        ui.pill(c,ax+ar-tw,pt,ax+ar,pt+dp(26),0xf2262c34);ui.textMid(c,action,ax+ar-tw*.5f,pt+dp(13),11.5f,Ui.TEXT,1,0);
+        ui.pill(c,ax+ar-tw,pt,ax+ar,pt+dp(26),0xf2241210);ui.textMid(c,action,ax+ar-tw*.5f,pt+dp(13),11.5f,Ui.TEXT,1,0);
     }
     private String applyLabel(){
         if(mode==ENTITIES){switch(entityTool){case 0:return "Place "+SectorMap.THING_NAMES[entType];case 1:return "Select entity";case 2:return entStage==0?"Pick entity":"Drop here";case 3:return "Rotate 45°";default:return "Delete entity";}}
@@ -531,6 +533,7 @@ final class EditorView extends View {
         if(hid==H_SAVE){autoSave();hint("Saved");return;}
         if(hid==H_PLAY){String v=ed.validateMap();if(!v.equals("Geometry valid")){hint(v);return;}autoSave();host.testPlay(map().copy());return;}
         if(hid==H_NAME){prompt("Map name",null,map().name,t->{if(!t.trim().isEmpty()){map().name=t.trim();changed("Renamed");}});return;}
+        if(hid==H_TAB+2){autoSave();cancelStage();pending.clear();host.open3D();return;}
         if(hid==H_TAB||hid==H_TAB+1){mode=hid-H_TAB;cancelStage();pending.clear();hint(mode==SECTORS?"Pick a tool, move the cursor, tap Apply":"Pick an entity, then Apply to place it");return;}
         if(hid==H_UNDO||hid==H_REDO){sectorAction(hid==H_UNDO?UNDO:REDO);return;}
         if(hid==H_ZOOMIN||hid==H_ZOOMOUT){zoom=Math.max(.3f,Math.min(4f,zoom*(hid==H_ZOOMIN?1.25f:.8f)));return;}

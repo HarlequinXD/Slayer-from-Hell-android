@@ -68,6 +68,12 @@ final class Demon {
         rig.update(dt,time,body,L,aimYaw,aimPitch,false,aiming,NOGUN);
         world=M.mul(M.tr(body.x,body.y,body.z),M.mul(M.scale(SCALE,SCALE,SCALE),M.tr(-body.x,-body.y,-body.z)));
     }
+    /** The 3D editor: stand at the spawn in the idle pose (no AI, no movement). */
+    void pose(float dt,float time,Level L){
+        body.health=1e6f;body.update(dt,L,0,0,0,0,false,0);
+        rig.update(dt,time,body,L,body.yaw,0,false,false,NOGUN);
+        world=M.mul(M.tr(body.x,body.y,body.z),M.mul(M.scale(SCALE,SCALE,SCALE),M.tr(-body.x,-body.y,-body.z)));
+    }
     /** Topples away from the killing blow, pivoting on the hooves. */
     float[] deathMatrix(){
         float t=Math.min(1,deathT/.85f);float a=t*t*1.48f;float drop=-.06f*t;

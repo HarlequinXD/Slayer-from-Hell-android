@@ -12,9 +12,9 @@ import android.widget.Toast;
  * Full-screen landscape. Three screens share one window: the menus, the level editor, and the game (an OpenGL ES 3
  * view with the touch HUD on top, and the pause / level-complete overlays over that).
  */
-public final class MainActivity extends Activity implements MenuView.Host,EditorView.Host {
+public final class MainActivity extends Activity implements MenuView.Host,EditorView.Host,Edit3DView.Host {
     private FrameLayout root;private Sfx sfx;private MapStore store;
-    private MenuView menu,overlay;private EditorView editor;
+    private MenuView menu,overlay;private EditorView editor;private Edit3DView view3d;private float[] cam3d;
     private GLSurfaceView gl;private Game game;private Hud hud;
     /** What is being played: a campaign map index, or -1 (custom / editor test); the map itself for restarts. */
     private int campaign=-1;private SectorMap playing;private boolean fromEditor;
@@ -89,14 +89,33 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
         EditorView keep=editor;campaign=-1;fromEditor=true;startGame(m);editor=keep;
     }
 
+    // ---------------------------------------------------------------- the editor's 3D view (the game renderer in edit mode)
+    @Override public void open3D(){
+        if(editor==null)return;
+        stopGame();root.removeAllViews();
+        game=new Game(this,editor.map().copy());game.editMode=true;game.sfx=sfx;
+        if(cam3d!=null)game.setEditCamera(cam3d[0],cam3d[1],cam3d[2],cam3d[3],cam3d[4]);
+        gl=new GLSurfaceView(this);gl.setEGLContextClientVersion(3);gl.setEGLConfigChooser(8,8,8,8,24,0);gl.setPreserveEGLContextOnPause(true);
+        gl.setRenderer(game);gl.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
+        view3d=new Edit3DView(this,game,editor.ed,this);
+        root.addView(gl);root.addView(view3d);
+    }
+    @Override public void back3D(){
+        if(game!=null)cam3d=game.editCamera();
+        view3d=null;stopGame();root.removeAllViews();if(editor!=null){root.addView(editor);editor.invalidate();}
+    }
+    @Override public void changed3D(){if(editor!=null)editor.autoSave();}
+    @Override public void playHere(SectorMap m){if(game!=null)cam3d=game.editCamera();view3d=null;EditorView keep=editor;campaign=-1;fromEditor=true;startGame(m);editor=keep;}
+
     // ---------------------------------------------------------------- lifecycle
     @Override public void onBackPressed(){
         if(overlay!=null){overlay.back();return;}
+        if(view3d!=null){back3D();return;}
         if(game!=null){pauseGame();return;}
         if(editor!=null){editor.back();return;}
         if(menu!=null&&menu.back())return;
         super.onBackPressed();
     }
-    @Override protected void onPause(){super.onPause();if(gl!=null)gl.onPause();if(game!=null&&overlay==null)pauseGame();sfx.pause();if(editor!=null)editor.autoSave();}
+    @Override protected void onPause(){super.onPause();if(gl!=null)gl.onPause();if(game!=null&&overlay==null&&view3d==null)pauseGame();sfx.pause();if(editor!=null)editor.autoSave();}
     @Override protected void onResume(){super.onResume();if(gl!=null)gl.onResume();sfx.resume();immersive();}
 }

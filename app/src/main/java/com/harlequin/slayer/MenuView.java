@@ -24,6 +24,9 @@ final class MenuView extends View implements Pointer.Aware {
         void playCampaign(int index);void playCustom(String id);void editMap(String id,SectorMap from);void quit();
         void resume();void restart();void leaveGame();void nextLevel();
     }
+    /** The window's display modes (the Windows build sets this; phones have none). */
+    interface Display {String[] modes();int mode();void setMode(int i);}
+    static Display display;
     static final int MAIN=0,CAMPAIGN=1,CUSTOM=2,SETTINGS=3,PAUSE=4,COMPLETE=5,SKILL=6;
     private static final int H_ITEM=100,H_BACK=1,H_NEW=2,H_PLAY=300,H_EDIT=400,H_DEL=500,H_SET=600,H_SKILL=700,H_EDITC=800,H_PLAYC=900,H_CONT=3;
     /** What to play once a skill is chosen: a campaign map, or a custom level's id. */
@@ -128,7 +131,7 @@ final class MenuView extends View implements Pointer.Aware {
     private void mainMenu(Canvas c,float w,float h){
         float bw=Math.min(dp(360),w*.42f),l=w-bw-dp(40),rr=w-dp(40),bh=Math.min(dp(62),(h-dp(80))/5.6f),gap=dp(10);
         float top=(h-(bh*5+gap*4))*.5f;
-        for(int i=0;i<5;i++){float t=top+i*(bh+gap);entry(c,l,t,rr,t+bh,MAIN_ICONS[i],MAIN_ITEMS[i],MAIN_SUBS[i],H_ITEM+i,i==0);}
+        for(int i=0;i<5;i++){float t=top+i*(bh+gap);entry(c,l,t,rr,t+bh,MAIN_ICONS[i],MAIN_ITEMS[i],i==3&&display!=null?"Display, look speed, graphics, music":MAIN_SUBS[i],H_ITEM+i,i==0);}
         ui.text(c,"v0.2 · sector maps",dp(48),h-dp(20),10.5f,0x70e0c0a0,0,-1);
     }
     private void campaign(Canvas c,float w,float h){
@@ -177,17 +180,19 @@ final class MenuView extends View implements Pointer.Aware {
     }
     private static final int[] LINES={200,270,360,540};
     private void settings(Canvas c,float w,float h){
-        String[] labels={"Look speed","Invert look","Render resolution","Show frame rate","Aim assist","Music"};
+        String[] labels=display!=null?new String[]{"Display","Look speed","Invert look","Render resolution","Show frame rate","Aim assist","Music"}:new String[]{"Look speed","Invert look","Render resolution","Show frame rate","Aim assist","Music"};
+        int off=display!=null?1:0;
         float l=dp(80),rr=Math.min(w-dp(40),l+dp(560)),top=dp(88),gap=Math.min(dp(8),Math.max(dp(4),(h-top-dp(12))*.025f)),
             rowH=Math.min(dp(50),(h-top-dp(12)-gap*(labels.length-1))/labels.length);   // rows shrink to fit short screens
         String[] vals={String.format(java.util.Locale.US,"%.1f",Game.lookSens*1000),Game.invertLook?"On":"Off",Game.RENDER_LINES+" lines"+(Game.RENDER_LINES==270?" (like RPG Pocket Editor)":""),Hud.showFps?"On":"Off",Game.aimAssist?"On":"Off",Music.volume<=0?"Off":Math.round(Music.volume*100)+"%"};
+        if(display!=null){String[] v=new String[vals.length+1];v[0]=display.modes()[display.mode()]+"  ·  F11";System.arraycopy(vals,0,v,1,vals.length);vals=v;}
         for(int i=0;i<labels.length;i++){float t=top+i*(rowH+gap);
             ui.round(c,l,t,rr,t+rowH,dp(10),0xb0140808);ui.outline(c,l,t,rr,t+rowH,dp(10),0x40ffffff,dp(1));
             ui.textMid(c,labels[i],l+dp(20),t+rowH*.5f,16,0xfff4e8e0,1,-1);float in=Math.min(dp(10),rowH*.18f);
-            if(i==0){r.set(rr-dp(150),t+in,rr-dp(106),t+rowH-in);ui.button(c,r,Icons.MINUS,null,Ui.NORMAL);ui.hit(r,H_SET+10);
+            if(i==off){r.set(rr-dp(150),t+in,rr-dp(106),t+rowH-in);ui.button(c,r,Icons.MINUS,null,Ui.NORMAL);ui.hit(r,H_SET+10);
                 ui.textMid(c,vals[i],rr-dp(78),t+rowH*.5f,15,0xffffb080,2,0);
                 r.set(rr-dp(56),t+in,rr-dp(12),t+rowH-in);ui.button(c,r,Icons.PLUS,null,Ui.NORMAL);ui.hit(r,H_SET+11);}
-            else{r.set(rr-dp(250),t+in,rr-dp(12),t+rowH-in);ui.button(c,r,-1,vals[i],Ui.ACTIVE);ui.hit(r,H_SET+i);}}
+            else{r.set(rr-dp(250),t+in,rr-dp(12),t+rowH-in);ui.button(c,r,-1,vals[i],Ui.ACTIVE);ui.hit(r,i<off?H_SET+20:H_SET+i-off);}}
     }
     /** Button sizes for n stacked buttons between top and bottom: as tall as 58dp, smaller on short screens. */
     private float[] stack(int n,float top,float bottom){float gap=Math.min(dp(10),Math.max(dp(5),(bottom-top)*.03f));float bh=Math.min(dp(58),(bottom-top-gap*(n-1))/n);
@@ -243,6 +248,7 @@ final class MenuView extends View implements Pointer.Aware {
                 Overlay.get().confirm("Delete \""+en.name+"\"?","This can't be undone.","Delete",true,()->{store.delete(en.id);show(CUSTOM);});return;}}
         if(page==SETTINGS){
             if(id==H_SET+10||id==H_SET+11){Game.lookSens=Math.max(.002f,Math.min(.012f,Game.lookSens+(id==H_SET+11?.0005f:-.0005f)));}
+            else if(id==H_SET+20&&display!=null){display.setMode((display.mode()+1)%display.modes().length);invalidate();return;}
             else if(id==H_SET+1)Game.invertLook=!Game.invertLook;
             else if(id==H_SET+2){int k=0;for(int i=0;i<LINES.length;i++)if(LINES[i]==Game.RENDER_LINES)k=i;Game.RENDER_LINES=LINES[(k+1)%LINES.length];}
             else if(id==H_SET+3)Hud.showFps=!Hud.showFps;

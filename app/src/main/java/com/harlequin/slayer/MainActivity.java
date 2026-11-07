@@ -54,7 +54,7 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
         if(gl!=null){gl.onPause();gl=null;}game=null;hud=null;overlay=null;sfx.engine(0,1);
     }
     private void startGame(SectorMap m){
-        stopGame();clearScreens();playing=m.copy();
+        stopGame();clearScreens();playing=m.copy();view3d=null;
         game=new Game(this,m);game.sfx=sfx;sfx.restartLoops();
         hud=new Hud(this,game);game.hud=hud;hud.onPause=()->runOnUiThread(this::pauseGame);
         game.listener=(k,t,s)->runOnUiThread(()->levelComplete(k,t,s));

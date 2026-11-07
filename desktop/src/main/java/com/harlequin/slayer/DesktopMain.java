@@ -179,7 +179,7 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
     private void showMenu(int page){stopGame();clearScreens();editor=null;menu=new MenuView(ctx,this,store);addScreen(menu);menu.show(page);}
     private void stopGame(){if(gl!=null)gl=null;game=null;hud=null;overlay=null;sfx.engine(0,1);}
     private void startGame(SectorMap m){
-        stopGame();clearScreens();playing=m.copy();
+        stopGame();clearScreens();playing=m.copy();view3d=null;
         game=new Game(ctx,m);game.sfx=sfx;sfx.restartLoops();
         hud=new Hud(ctx,game);game.hud=hud;hud.onPause=()->new Handler().post(this::pauseGame);
         game.listener=(k,t,s)->new Handler().post(()->levelComplete(k,t,s));

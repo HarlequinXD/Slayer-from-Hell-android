@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - pc-controls
   workflow_dispatch:
 
 jobs:

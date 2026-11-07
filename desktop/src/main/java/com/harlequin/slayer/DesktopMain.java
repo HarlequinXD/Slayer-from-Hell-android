@@ -34,7 +34,8 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
     private MenuView menu,overlay;private EditorView editor;private Edit3DView view3d;private float[] cam3d;
     private GLSurfaceView gl;private Game game;private Hud hud;
     private int campaign=-1;private SectorMap playing;private boolean fromEditor;
-    private boolean fullscreen;private int winX,winY,winW,winH;
+    /** Display mode: 0 full screen (the default), 1 borderless window over the whole screen, 2 a window. */
+    private int mode=2;private int winX,winY,winW,winH;private static final String[] MODES={"Full screen","Borderless window","Window"};
     private double lastCX=Double.NaN,lastCY=Double.NaN;private boolean captured;
 
     public static void main(String[] args){
@@ -65,6 +66,9 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
         sfx=new Sfx(ctx);store=new MapStore(ctx.getFilesDir());
         music=new Music();if(shots==null){music.prepare(MusicSynth.HELL);music.prepare(MusicSynth.TECH);}
         layer=new Overlay(ctx);controls=new Controls(dev,layer,this);controls.toggleFullscreen=this::toggleFullscreen;
+        MenuView.display=new MenuView.Display(){public String[] modes(){return MODES;}public int mode(){return mode;}
+            public void setMode(int i){applyMode(i);ctx.getSharedPreferences("slayer",0).edit().putInt("display",mode).apply();}};
+        if(shots==null)applyMode(Math.max(0,Math.min(2,ctx.getSharedPreferences("slayer",0).getInt("display",0))));   // launches full screen
         dev.last=Devices.SRC_MOUSE;
         callbacks();
         glfwSetInputMode(window,GLFW_CURSOR,GLFW_CURSOR_HIDDEN);   // the app draws its own cursor
@@ -95,12 +99,15 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
             glfwGetFramebufferSize(window,w,h);glfwGetWindowSize(window,ww,wh);
             fbW=Math.max(1,w.get(0));fbH=Math.max(1,h.get(0));scaleX=fbW/(float)Math.max(1,ww.get(0));scaleY=fbH/(float)Math.max(1,wh.get(0));}
     }
-    private void toggleFullscreen(){
-        long mon=glfwGetPrimaryMonitor();GLFWVidMode vm=glfwGetVideoMode(mon);if(vm==null)return;
-        if(!fullscreen){try(MemoryStack s=MemoryStack.stackPush()){IntBuffer a=s.mallocInt(1),b=s.mallocInt(1);glfwGetWindowPos(window,a,b);winX=a.get(0);winY=b.get(0);glfwGetWindowSize(window,a,b);winW=a.get(0);winH=b.get(0);}
-            glfwSetWindowMonitor(window,mon,0,0,vm.width(),vm.height(),vm.refreshRate());}
-        else glfwSetWindowMonitor(window,0,winX,winY,winW,winH,0);
-        fullscreen=!fullscreen;glfwSwapInterval(1);
+    /** F11: full screen and back to the last window. */
+    private void toggleFullscreen(){int to=mode==2?0:2;applyMode(to);ctx.getSharedPreferences("slayer",0).edit().putInt("display",mode).apply();}
+    private void applyMode(int to){
+        long mon=glfwGetPrimaryMonitor();GLFWVidMode vm=glfwGetVideoMode(mon);if(vm==null||to==mode)return;
+        if(mode==2)try(MemoryStack s=MemoryStack.stackPush()){IntBuffer a=s.mallocInt(1),b=s.mallocInt(1);glfwGetWindowPos(window,a,b);winX=a.get(0);winY=b.get(0);glfwGetWindowSize(window,a,b);winW=a.get(0);winH=b.get(0);}
+        if(to==0){glfwSetWindowAttrib(window,GLFW_DECORATED,GLFW_TRUE);glfwSetWindowMonitor(window,mon,0,0,vm.width(),vm.height(),vm.refreshRate());}
+        else if(to==1){glfwSetWindowMonitor(window,0,0,0,vm.width(),vm.height(),0);glfwSetWindowAttrib(window,GLFW_DECORATED,GLFW_FALSE);glfwSetWindowPos(window,0,0);glfwSetWindowSize(window,vm.width(),vm.height());}
+        else{glfwSetWindowMonitor(window,0,winX,winY,winW,winH,0);glfwSetWindowAttrib(window,GLFW_DECORATED,GLFW_TRUE);}
+        mode=to;glfwSwapInterval(1);updateSize();
     }
     private void icon(){
         try(java.io.InputStream in=DesktopMain.class.getResourceAsStream("/icon.png")){if(in==null)return;

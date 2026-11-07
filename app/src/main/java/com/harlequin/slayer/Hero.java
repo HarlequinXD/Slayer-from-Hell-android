@@ -59,6 +59,22 @@ final class Hero {
     /** A hand cannon on the left forearm: raised along the aim while firing. cannonKick is the recoil (set by the game). */
     boolean leftCannon=true;float cannonKick;float[] cannonMat;private float cannonAim,cannonHold;
 
+    /**
+     * A cutscene override (glory kills): the animator still runs locomotion, balance and foot IK, but the facing,
+     * torso, head and arm targets come from a choreography. Hand targets are in the torso's bind space (like the
+     * normal arm poses) unless the matching *World flag is set; the weights blend the override in and out.
+     */
+    static final class Cine {
+        float yaw;                          // body facing (world)
+        float lean,twist,roll,crouch;       // torso pitch forward (+), twist to the left (+), roll, pelvis drop (m)
+        float headYaw,headPitch;            // head relative to the facing; pitch up (+)
+        float[] rHand,rPole,lHand,lPole;   // arm targets (null = the normal pose)
+        boolean rWorld,lWorld;float rW=1,lW=1;
+        float shake;                        // extra buzz on the saw arm (ripping)
+    }
+    /** The cutscene override, or null for normal play. */
+    Cine cine;
+
     static float wrap(float a){while(a>Math.PI)a-=2*Math.PI;while(a<-Math.PI)a+=2*Math.PI;return a;}
     static float smooth(float a,float b,float x){float t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);}
     static float mix(float a,float b,float t){return a+(b-a)*t;}
@@ -81,7 +97,8 @@ final class Hero {
         aim=approach(aim,aiming?1:0,aiming?14:4,dt);
         speed=(float)Math.hypot(pl.vx,pl.vy);
         float target=aiming?camYaw:(speed>.4f?(float)Math.atan2(pl.vy,pl.vx):bodyYaw);
-        float turn=wrap(target-bodyYaw);float rate=aiming?16:9;bodyYaw=wrap(bodyYaw+turn*Math.min(1,rate*dt));
+        if(cine!=null)target=cine.yaw;
+        float turn=wrap(target-bodyYaw);float rate=cine!=null?22:aiming?16:9;bodyYaw=wrap(bodyYaw+turn*Math.min(1,rate*dt));
         float yawRate=wrap(bodyYaw-prevYaw)/Math.max(dt,1e-3f);prevYaw=bodyYaw;
         float g=hasGun?1:0;
         float hipOff=mix(.08f,.18f,aim)*mix(.4f,1,g),twist=mix(.04f,.12f,aim)*mix(.3f,1,g);   // the saw side leads, the shotgun side is tucked back
@@ -175,6 +192,7 @@ final class Hero {
         float midStance=stance*.5f;
         float bob=mix(.02f*(float)Math.cos(4*Math.PI*(phase-midStance)),.04f*(float)Math.cos(4*Math.PI*(phase-midStance-.25f)),run)*gaitAmp;
         float dz=-.012f-.01f*aim-.05f*run*gaitAmp+bob-.17f*land+(air>0?.02f*air:0)-.012f*shuffleAmp-.4f*pick*pick;
+        if(cine!=null)dz-=cine.crouch;
         float lat=-.022f*(float)Math.cos(2*Math.PI*(phase-midStance))*gaitAmp*(1-run)+.03f*fShift*(float)Math.sin(Math.PI*fu);
         float pRoll=.035f*(float)Math.cos(2*Math.PI*(phase-midStance))*gaitAmp+bank*.4f-fShift*.05f*(float)Math.sin(Math.PI*fu);
         float pTwist=mix(.09f,.16f,run)*(float)Math.cos(2*Math.PI*phase)*gaitAmp*(dx>=0?1:-1);
@@ -196,13 +214,14 @@ final class Hero {
         float bl=-.32f*bump;   // the bump rocks her shoulders back (away from the wall)
         float wl=wallLean*.06f;
         float[] Tr=M.mul(M.rz(torsoTwist),M.mul(M.ry(lean*dx-aimPitch*.35f-kick*.05f+bl*(-bnx)*0-(bl*bnx)-wl*0),M.rx(-lean*dy*.6f+bank*.6f+bl*bny+fRoll*.07f)));
-        Tr=M.mul(M.rz(.0f),Tr);
+        if(cine!=null)Tr=M.mul(M.rz(cine.twist),M.mul(M.ry(cine.lean),M.mul(M.rx(cine.roll),Tr)));
         float[] T=M.mul(P,pivot(WAIST,Tr));
         mat[P_TORSO]=T;mat[P_PELVIS]=P;
         mat[sidePart(1,S_PAULDRON)]=T;mat[sidePart(-1,S_PAULDRON)]=T;
         float reload=hasGun&&gun.reloading()?1:0;
         float eyeYaw=bodyYaw+aim*wrap(camYaw-bodyYaw)+fLook-.45f*fSaw;
         float eyePitch=mix(aimPitch,-.32f,reload*.7f)+(gun.state==Gun.FIRE?-.06f*kick:0)-.25f*fSaw-.5f*pick-.25f*bump;
+        if(cine!=null){eyeYaw=bodyYaw+cine.headYaw;eyePitch=cine.headPitch;}
         float[] neckW=M.pt(T,NECK);
         float[] H=M.mul(M.tr(neckW[0],neckW[1],neckW[2]),M.mul(M.rz(eyeYaw),M.mul(M.ry(-eyePitch*.8f),M.mul(M.rx(.12f*aim*g),M.tr(-NECK[0],-NECK[1],-NECK[2])))));
         mat[P_HEAD]=H;
@@ -233,9 +252,12 @@ final class Hero {
         float[] hT=lerp3(lerp3(lerp3(lerp3(idleH,cutH,saw),crossH,cross),lookH,fSaw),cutH,Math.min(1,bump*.8f));
         float[] pT=lerp3(lerp3(lerp3(idleP,cutP,saw),crossP,cross),lookP,fSaw);
         hT[2]+=(float)Math.sin(time*1.6f)*.006f+(float)Math.sin(phase*4*Math.PI)*.012f*gaitAmp;
-        arm(-1,T,M.pt(T,hT),Model.norm(M.dir(T,pT)));
+        float[] rTarget=M.pt(T,hT),rPole=Model.norm(M.dir(T,pT));
+        if(cine!=null&&cine.rHand!=null){float[] ct=cine.rWorld?cine.rHand:M.pt(T,cine.rHand);rTarget=lerp3(rTarget,ct,cine.rW);
+            if(cine.rPole!=null)rPole=Model.norm(lerp3(rPole,Model.norm(M.dir(T,cine.rPole)),cine.rW));}
+        arm(-1,T,rTarget,rPole);
         mat[sidePart(-1,S_HAND)]=null;                 // her right hand is inside the sleeve
-        float shake=saw>.05f?.0015f*(float)Math.sin(time*170)*(.4f+saw):.0006f*(float)Math.sin(time*110);
+        float shake=(saw>.05f?.0015f*(float)Math.sin(time*170)*(.4f+saw):.0006f*(float)Math.sin(time*110))+(cine!=null?cine.shake*(float)Math.sin(time*97):0);
         sawMat=M.mul(M.mul(mat[sidePart(-1,S_FORE)],SAW_BIND),M.tr(0,shake,shake*.6f));
         float[] caddy=M.mul(sawMat,CADDY_FRAME);
         caddyCount=Math.min(2,gun.reserve);
@@ -280,6 +302,8 @@ final class Hero {
                 float[] side=v(-(float)Math.sin(eyeYaw),(float)Math.cos(eyeYaw),0);
                 float[] aimH=Model.add(Model.add(Model.add(lsh,d,.5f-.09f*cannonKick),side,.1f),v(0,0,1),-.1f);
                 hw=Hero.lerpW(hw,aimH,cannonAim);lPole=Model.norm(lerp3(lPole,Model.add(v(0,0,-1),side,.6f),cannonAim));}
+            if(cine!=null&&cine.lHand!=null){float[] ct=cine.lWorld?cine.lHand:M.pt(T,cine.lHand);hw=lerp3(hw,ct,cine.lW);
+                if(cine.lPole!=null)lPole=Model.norm(lerp3(lPole,Model.norm(M.dir(T,cine.lPole)),cine.lW));}
             arm(1,T,hw,lPole);
         }
         if(leftCannon){mat[sidePart(1,S_HAND)]=null;cannonMat=M.mul(mat[sidePart(1,S_FORE)],CANNON_BIND_L);}   // her left hand is inside the cannon's sleeve

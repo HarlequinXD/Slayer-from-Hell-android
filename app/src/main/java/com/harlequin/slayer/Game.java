@@ -37,6 +37,10 @@ final class Game implements GLSurfaceView.Renderer {
     static int RENDER_LINES=270;
     /** Settings (from the menu). */
     static float lookSens=.0055f;static boolean invertLook;
+    /** Aim assist (a setting): bolts bend to a demon near the crosshair, and holding fire eases the view onto him. */
+    static boolean aimAssist=true;
+    /** The crosshair is on a demon (the HUD tints it); the letterbox bars of a glory kill (0..1). */
+    volatile boolean assistLock;volatile float letterbox;
     private int W=1,H=1,SW=1,SH=1,fbo,fboColor,fboDepth;private long last;private float time,flash;private int frames;private long fpsStart;
     private float[] decalBuf=new float[Fx.MAXD*6*6],partBuf=new float[Fx.MAXP*6*9];
 
@@ -187,14 +191,21 @@ final class Game implements GLSurfaceView.Renderer {
     // ------------------------------------------------------------------ update
     private int lastStep;private boolean wasOnGround=true;
     private void update(float dt){
-        Hud.Input in=hud.in;float[] look=in.takeLook();boolean jump=in.takeJump()||(in.jumpHeld&&pl.onGround);
+        Hud.Input in=hud.in;
+        if(glory!=null){updateGlory(dt,in);return;}
+        letterbox=Math.max(0,letterbox-dt*3);gloryCool-=dt;
+        float[] look=in.takeLook();boolean jump=in.takeJump()||(in.jumpHeld&&pl.onGround);
         int ev=0;
         pl.update(dt,level,in.moveX,in.moveY,look[0],invertLook?-look[1]:look[1],jump,lookSens);
         if(pl.justJumped)sfx.play(Sfx.JUMP,.5f);
         if(pl.justLanded)sfx.play(Sfx.LAND,Math.min(1,pl.landSpeed/12));
         if(pl.hurtFlash>.99f&&(int)(time*4)%2==0)sfx.play(Sfx.SIZZLE,.4f);
         boolean rl=in.takeReload();
-        fireCannon(dt,in.fire);
+        // the chainsaw on a demon in reach: a glory kill
+        if(in.saw&&gloryCool<=0&&!completed){Glory g=Glory.tryStart(pl,enemies,level);if(g!=null){startGlory(g);return;}}
+        Demon target=assistTarget();assistLock=target!=null;
+        if(target!=null&&in.fire)assistPull(dt,target);
+        fireCannon(dt,in.fire,target);
         hero.update(dt,time,pl,level,pl.yaw,pl.viewPitch(),in.fire,in.saw,gun);
         // walking into a wall: the animation layer recoils off it
         if(pl.bumpSpeed>0){sfx.play(Sfx.LAND,Math.min(1,pl.bumpSpeed/5)*.7f,1.2f);hero.bump(pl.bumpNx,pl.bumpNy,pl.bumpSpeed);}
@@ -319,7 +330,7 @@ final class Game implements GLSurfaceView.Renderer {
     // ------------------------------------------------------------------ the warden's hand cannon (left forearm)
     /** Energy cells (ammo) and the time until the cannon can fire again. */
     int cells=Math.round(60*Skill.ammo());private float cannonCool,dryCool;static final int MAX_CELLS=150;
-    private void fireCannon(float dt,boolean fire){
+    private void fireCannon(float dt,boolean fire,Demon target){
         cannonCool-=dt;dryCool-=dt;
         if(!fire||cannonCool>0||hero.cannonMat==null)return;
         if(cells<=0){if(dryCool<=0){sfx.play(Sfx.DRY,.8f);dryCool=.4f;}return;}
@@ -329,11 +340,89 @@ final class Game implements GLSurfaceView.Renderer {
         float[] f=camF;float[] wall=level.ray(camPos[0],camPos[1],camPos[2],f[0],f[1],f[2],90);float far=wall!=null?wall[6]:90;
         float[] dh=enemies.ray(camPos[0],camPos[1],camPos[2],f[0],f[1],f[2],far);if(dh!=null)far=dh[0];
         float[] aim=Model.add(camPos,f,far);float[] d=Model.norm(Model.sub(aim,mz));if(Model.dot(d,f)<.4f)d=f;
+        if(dh==null&&target!=null){   // aim assist: the bolt bends to the demon near the crosshair, leading him
+            float[] c=chest(target);float lead=Model.len(Model.sub(c,mz))/Enemies.BOLT_SPEED;
+            float[] ap={c[0]+target.body.vx*lead,c[1]+target.body.vy*lead,c[2]};float[] ad=Model.norm(Model.sub(ap,mz));if(Model.dot(ad,f)>.4f)d=ad;}
         enemies.bolt(mz,d);enemies.hear(pl.x,pl.y,pl.z,32);
         hero.cannonKick=1;pl.kickVel+=.9f;flash=.07f;
         sfx.play(Sfx.FIREBALL,.85f,1.35f+fx.rng.nextFloat()*.1f);sfx.play(Sfx.BLAST,.35f,1.6f);
         fx.spawn(Fx.STAR,mz[0],mz[1],mz[2],d[0],d[1],d[2],.06f,.26f,2,0,0,.4f,1f,.45f,1);
         for(int k=0;k<4;k++){float sp=fx.rnd(1,4);fx.spawn(Fx.ADD,mz[0],mz[1],mz[2],d[0]*sp+fx.rnd(-.6f,.6f),d[1]*sp+fx.rnd(-.6f,.6f),d[2]*sp+fx.rnd(-.6f,.6f),fx.rnd(.08f,.18f),fx.rnd(.02f,.04f),-.3f,0,3,.5f,1f,.5f,1);}
+    }
+
+    // ------------------------------------------------------------------ aim assist
+    static float[] chest(Demon d){return new float[]{d.body.x,d.body.y,d.body.z+1.15f*Demon.SCALE};}
+    /**
+     * The living, visible demon nearest the crosshair within a small cone (about 6 degrees, wider up close where a
+     * body fills more of the screen), scored by how far off the crosshair he is relative to that cone; null if none.
+     */
+    private Demon assistTarget(){
+        if(!aimAssist)return null;Demon best=null;float bestS=1;
+        for(Demon d:enemies.demons){if(d.dead||d.rig.mat[Hero.P_HEAD]==null)continue;
+            float[] c=chest(d);float ex=c[0]-camPos[0],ey=c[1]-camPos[1],ez=c[2]-camPos[2],dist=(float)Math.sqrt(ex*ex+ey*ey+ez*ez);
+            if(dist<.5f||dist>45)continue;
+            float cos=(ex*camF[0]+ey*camF[1]+ez*camF[2])/dist;float ang=(float)Math.acos(Math.max(-1,Math.min(1,cos)));
+            float lim=Math.max(.105f,(float)Math.atan(.75f/dist));if(ang>lim)continue;
+            float[] w=level.ray(camPos[0],camPos[1],camPos[2],ex/dist,ey/dist,ez/dist,dist);if(w!=null&&w[6]<dist-.4f)continue;
+            float sc=ang/lim;if(sc<bestS){bestS=sc;best=d;}}
+        return best;
+    }
+    /** Holding fire on a target eases the view toward his chest (gently, so the player stays in control). */
+    private void assistPull(float dt,Demon d){
+        float[] c=chest(d);float ex=c[0]-camPos[0],ey=c[1]-camPos[1],ez=c[2]-camPos[2];
+        float wantYaw=(float)Math.atan2(ey,ex),wantPitch=(float)Math.atan2(ez,(float)Math.hypot(ex,ey));
+        float k=Math.min(1,dt*3.2f),max=1.1f*dt;
+        float dy=Math.max(-max,Math.min(max,Hero.wrap(wantYaw-pl.yaw)*k)),dp=Math.max(-max,Math.min(max,(wantPitch-pl.viewPitch())*k*.7f));
+        pl.yaw=Hero.wrap(pl.yaw+dy);pl.pitch=Math.max(-1.1f,Math.min(1.2f,pl.pitch+dp));
+    }
+
+    // ------------------------------------------------------------------ chainsaw glory kills
+    /** The glory kill being played (null in normal play). Everything else holds still while it runs, and she can't be hurt. */
+    private Glory glory;private float gloryCool,engineBoost,ripClock;
+    private void startGlory(Glory g){
+        glory=g;hero.cine=g.her;g.d.rig.cine=g.him;g.d.charge=0;
+        pl.vx=pl.vy=pl.vz=0;engineBoost=1;ripClock=0;
+        sfx.play(Sfx.PAIN,.9f,1.2f);sfx.play(Sfx.CHARGE,.5f,.6f);
+        banner=null;bannerT=0;
+    }
+    private void updateGlory(float rdt,Hud.Input in){
+        in.takeLook();in.takeJump();in.takeReload();
+        Glory g=glory;float dt=rdt*g.timeScale();Demon d=g.d;
+        float ox=pl.x,oy=pl.y;
+        int cue=g.step(dt,level,hero.sawMat);
+        pl.x=g.px;pl.y=g.py;pl.z=g.pz;float k=1/Math.max(dt,1e-4f);pl.vx=(pl.x-ox)*k;pl.vy=(pl.y-oy)*k;pl.vz=0;pl.onGround=true;
+        pl.justJumped=pl.justLanded=false;pl.bumpSpeed=0;pl.pushingWall=false;pl.yaw=g.herYaw;
+        hero.update(dt,time,pl,level,g.herYaw,0,false,true,gun);
+        engineBoost=Hero.approach(engineBoost,g.ripping()?1.6f:.6f,6,dt);
+        updateSaw(dt);
+        if(!d.dead)d.cinePose(dt,time,level,g.dx,g.dy,g.dz,g.himYaw);else d.update(dt,time,level);
+        // sound and blood on the beats
+        float[] tip=hero.sawMat!=null?M.pt(hero.sawMat,new float[]{.62f,0,0}):Demon.MUZZLE_LOCAL;
+        float bx=-g.ux,by=-g.uy;
+        if((cue&Glory.CUE_GRAB)!=0){sfx.play(Sfx.LAND,.9f,.75f);sfx.play(Sfx.ROAR,.9f,1.15f);}
+        if((cue&Glory.CUE_HIT)!=0){sfx.play(Sfx.GRIND,1f,.62f);sfx.play(Sfx.HIT,1f,.7f);sfx.play(Sfx.PAIN,1f,.8f);sfx.play(Sfx.EXPLODE,.4f,1.7f);
+            for(int i=0;i<5;i++)fx.blood(tip[0],tip[1],tip[2],bx+fx.rnd(-.5f,.5f),by+fx.rnd(-.5f,.5f),fx.rnd(.1f,.9f));d.hitFlash=1;}
+        if(g.ripping()){ripClock-=dt;if(ripClock<=0){ripClock=.09f;
+            sfx.play(Sfx.GRIND,.85f,.62f+fx.rng.nextFloat()*.12f);if(fx.rng.nextFloat()<.35f)sfx.play(Sfx.HIT,.6f,.65f);
+            fx.blood(tip[0],tip[1],tip[2],bx+fx.rnd(-.4f,.4f),by+fx.rnd(-.4f,.4f),fx.rnd(.3f,1.1f));d.hitFlash=.6f;
+            for(int i=0;i<3;i++)fx.spawn(Fx.ADD,tip[0],tip[1],tip[2],bx*fx.rnd(1,3)+fx.rnd(-1.2f,1.2f),by*fx.rnd(1,3)+fx.rnd(-1.2f,1.2f),fx.rnd(.5f,2.5f),fx.rnd(.12f,.3f),fx.rnd(.008f,.016f),-1,0,2,1f,.55f,.15f,1);}}
+        if((cue&Glory.CUE_OUT)!=0){sfx.play(Sfx.GRIND,.9f,1.15f);sfx.play(Sfx.PAIN,1f,.7f);for(int i=0;i<8;i++)fx.blood(tip[0],tip[1],tip[2],-bx*.3f+fx.rnd(-.6f,.6f),-by*.3f+fx.rnd(-.6f,.6f),fx.rnd(.2f,1.2f));}
+        if((cue&Glory.CUE_SHOVE)!=0)sfx.play(Sfx.LAND,.8f,.7f);
+        if((cue&Glory.CUE_DIE)!=0&&!d.dead)d.damage(d.health+1,g.ux,g.uy);   // he topples away from her
+        demonEvents();
+        fx.update(dt,level);if(fx.updateShells(dt,level)>0)sfx.play(Sfx.TINK,.5f);
+        // the cutscene camera
+        camPos=g.camPos.clone();camF=Model.norm(Model.sub(g.camTarget,g.camPos));camR=Model.norm(Model.cross(camF,new float[]{0,0,1}));camU=Model.cross(camR,camF);camFov=g.camFov;
+        letterbox=Math.min(1,letterbox+rdt*7);flash=Math.max(0,flash-dt);
+        playTime+=rdt;demonsLeft=enemies.alive();health=pl.health;hurt=0;assistLock=false;ammo=cells;
+        if((cue&Glory.CUE_END)!=0)endGlory();
+    }
+    private void endGlory(){
+        Glory g=glory;glory=null;hero.cine=null;g.d.rig.cine=null;engineBoost=0;gloryCool=.5f;
+        if(!g.d.dead)g.d.damage(g.d.health+1,g.ux,g.uy);
+        pl.vx=pl.vy=0;pl.yaw=g.herYaw;camPZ=Float.NaN;camDist=2.7f;   // cut back to her shoulder
+        pl.health=Math.min(100,pl.health+10);int add=Math.round(5*Skill.ammo());cells=Math.min(MAX_CELLS,cells+add);
+        sfx.play(Sfx.PICKUP,.8f,1.1f);banner="GLORY KILL  +10 HEALTH  +"+add+" CELLS";bannerT=1.8f;
     }
 
     // ------------------------------------------------------------------ pickups: health orbs and energy cells
@@ -392,10 +481,10 @@ final class Game implements GLSurfaceView.Renderer {
     private void updateSaw(float dt){
         float target=hero.saw>.5f?1:.12f;sawRev+=(target-sawRev)*Math.min(1,dt*(target>sawRev?6:2.5f));
         chainScroll+=dt*(.2f+sawRev*2.6f);chainScroll-=(float)Math.floor(chainScroll);
-        sfx.engine(.18f+sawRev*.55f,.55f+sawRev*1.25f);
+        sfx.engine(Math.min(1,.18f+sawRev*.55f+engineBoost*.25f),.55f+sawRev*1.25f+engineBoost*.4f);
         // the bar's leading edge biting into walls: sparks, scars and a grind
         if(hero.saw>.6f){float[] sa=M.pt(hero.sawMat,new float[]{.47f,0,0}),sb=M.pt(hero.sawMat,new float[]{.97f,0,0});
-            float[] flesh=enemies.saw(sa,sb,dt);
+            float[] flesh=glory!=null?null:enemies.saw(sa,sb,dt);
             if(flesh!=null){fx.blood(flesh[0],flesh[1],flesh[2],sb[0]-sa[0],sb[1]-sa[1],sb[2]-sa[2]);if(time-lastGrind>.14f){lastGrind=time;sfx.play(Sfx.GRIND,.8f,.7f+fx.rng.nextFloat()*.1f);sfx.play(Sfx.HIT,.5f,.7f);}pl.kickVel+=dt*2;}}
         if(hero.saw>.6f){float[] a=M.pt(hero.sawMat,new float[]{.47f,0,0}),b=M.pt(hero.sawMat,new float[]{.97f,0,0});float[] d=Model.sub(b,a);float l=Model.len(d);d=Model.mul(d,1/l);
             float[] hit=level.ray(a[0],a[1],a[2],d[0],d[1],d[2],l);

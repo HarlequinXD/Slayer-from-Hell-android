@@ -80,8 +80,11 @@ final class Hud extends View {
             postInvalidateOnAnimation();return;}
         // lava / damage vignette
         if(game.hurt>0){p.setShader(new android.graphics.RadialGradient(w/2,h/2,Math.max(w,h)*.7f,0x00ff2000,((int)(game.hurt*150)<<24)|0xff2000,android.graphics.Shader.TileMode.CLAMP));c.drawRect(0,0,w,h,p);p.setShader(null);}
+        // a glory kill: cinematic bars, no controls
+        if(game.letterbox>0){float bh=h*.11f*game.letterbox;p.setColor(0xff000000);c.drawRect(0,0,w,bh,p);c.drawRect(0,h-bh,w,h,p);
+            if(game.letterbox>.99f){postInvalidateOnAnimation();return;}}
         // crosshair (opens up with recoil)
-        float g=dp*(7+game.spread*26),L=dp*7;p.setStrokeWidth(dp*2);p.setColor(0xd0ffffff);
+        float g=dp*(7+game.spread*26),L=dp*7;p.setStrokeWidth(dp*2);p.setColor(game.assistLock?0xf0ff5a3a:0xd0ffffff);
         c.drawLine(w/2-g-L,h/2,w/2-g,h/2,p);c.drawLine(w/2+g,h/2,w/2+g+L,h/2,p);c.drawLine(w/2,h/2-g-L,w/2,h/2-g,p);c.drawLine(w/2,h/2+g,w/2,h/2+g+L,p);
         p.setColor(0xffffffff);c.drawCircle(w/2,h/2,dp*1.4f,p);
         // move stick

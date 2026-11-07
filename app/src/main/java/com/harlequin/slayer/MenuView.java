@@ -25,7 +25,7 @@ final class MenuView extends View implements Pointer.Aware {
         void resume();void restart();void leaveGame();void nextLevel();
     }
     static final int MAIN=0,CAMPAIGN=1,CUSTOM=2,SETTINGS=3,PAUSE=4,COMPLETE=5,SKILL=6;
-    private static final int H_ITEM=100,H_BACK=1,H_NEW=2,H_PLAY=300,H_EDIT=400,H_DEL=500,H_SET=600,H_SKILL=700,H_EDITC=800,H_PLAYC=900;
+    private static final int H_ITEM=100,H_BACK=1,H_NEW=2,H_PLAY=300,H_EDIT=400,H_DEL=500,H_SET=600,H_SKILL=700,H_EDITC=800,H_PLAYC=900,H_CONT=3;
     /** What to play once a skill is chosen: a campaign map, or a custom level's id. */
     private int pendingCampaign=-1;private String pendingCustom;private int skillFrom=MAIN;
 
@@ -33,7 +33,7 @@ final class MenuView extends View implements Pointer.Aware {
     private final Host host;private final MapStore store;private final SharedPreferences prefs;
     int page=MAIN;
     /** Overlay details: whether the game came from the editor, completion stats, whether there is a next map. */
-    boolean fromEditor,hasNext;String doneName="";int kills,total;float seconds;
+    boolean fromEditor,hasNext,finale;String doneName="";int kills,total;float seconds;
     private ArrayList<MapStore.Entry> customs=new ArrayList<>();private float scroll;private int pressed=-1;
     private final Random rng=new Random(7);private final float[][] embers=new float[90][];
     private long t0=System.currentTimeMillis(),last=System.nanoTime();
@@ -50,8 +50,14 @@ final class MenuView extends View implements Pointer.Aware {
 
     // ---------------------------------------------------------------- settings
     static void loadSettings(Context c){SharedPreferences s=c.getSharedPreferences("slayer",0);
-        Skill.current=Math.max(0,Math.min(4,s.getInt("skill",Skill.MEDIUM)));Game.lookSens=s.getFloat("sens",.0055f);Game.invertLook=s.getBoolean("invert",false);Game.RENDER_LINES=s.getInt("lines",270);Hud.showFps=s.getBoolean("fps",true);Game.aimAssist=s.getBoolean("aim",true);}
-    private void saveSettings(){prefs.edit().putFloat("sens",Game.lookSens).putBoolean("invert",Game.invertLook).putInt("lines",Game.RENDER_LINES).putBoolean("fps",Hud.showFps).putBoolean("aim",Game.aimAssist).apply();}
+        Skill.current=Math.max(0,Math.min(4,s.getInt("skill",Skill.MEDIUM)));Game.lookSens=s.getFloat("sens",.0055f);Game.invertLook=s.getBoolean("invert",false);Game.RENDER_LINES=s.getInt("lines",270);Hud.showFps=s.getBoolean("fps",true);Game.aimAssist=s.getBoolean("aim",true);
+        Music.volume=s.getFloat("music",.8f);}
+    /** The furthest campaign map she has reached (maps up to it can be played). */
+    static int unlocked(Context c){return Math.max(0,Math.min(Maps.count()-1,c.getSharedPreferences("slayer",0).getInt("campaign",0)));}
+    /** Map `next` is open now (she finished the one before it). */
+    static void unlock(Context c,int next){SharedPreferences s=c.getSharedPreferences("slayer",0);int n=Math.min(next,Maps.count()-1);
+        SharedPreferences.Editor e=s.edit();if(n>s.getInt("campaign",0))e.putInt("campaign",n);if(next>=Maps.count())e.putBoolean("finished",true);e.apply();}
+    private void saveSettings(){prefs.edit().putFloat("sens",Game.lookSens).putBoolean("invert",Game.invertLook).putInt("lines",Game.RENDER_LINES).putBoolean("fps",Hud.showFps).putBoolean("aim",Game.aimAssist).putFloat("music",Music.volume).apply();}
 
     // ---------------------------------------------------------------- drawing
     @Override protected void onDraw(Canvas c){
@@ -62,9 +68,9 @@ final class MenuView extends View implements Pointer.Aware {
         else backdrop(c,w,h,t,dt);
         switch(page){
             case MAIN:title(c,w,h,t);mainMenu(c,w,h);break;
-            case CAMPAIGN:header(c,w,"CAMPAIGN","Fight through hell, one map at a time");campaign(c,w,h);break;
+            case CAMPAIGN:header(c,w,"CAMPAIGN","The story of Slayer, in eight maps");campaign(c,w,h);break;
             case CUSTOM:header(c,w,"CUSTOM LEVELS","Levels you have built in the editor");custom(c,w,h);break;
-            case SETTINGS:header(c,w,"SETTINGS","Controls and graphics");settings(c,w,h);break;
+            case SETTINGS:header(c,w,"SETTINGS","Controls, graphics and music");settings(c,w,h);break;
             case SKILL:header(c,w,"CHOOSE YOUR SKILL","As in Doom: the harder the skill, the more demons");skills(c,w,h);break;
             case PAUSE:pause(c,w,h);break;
             case COMPLETE:complete(c,w,h);break;
@@ -104,8 +110,8 @@ final class MenuView extends View implements Pointer.Aware {
     }
     /** A big menu entry: dark glass panel, accent bar, icon, label and a line of detail. */
     @Override public Ui pointerUi(){return ui;}
-    @Override public void pointerPan(float dx,float dy){if(page==CUSTOM){scroll+=dy;invalidate();}}
-    @Override public void pointerZoom(float steps,float x,float y){if(page==CUSTOM){scroll-=steps*dp(72);invalidate();}}
+    @Override public void pointerPan(float dx,float dy){if(page==CUSTOM||page==CAMPAIGN){scroll+=dy;invalidate();}}
+    @Override public void pointerZoom(float steps,float x,float y){if(page==CUSTOM||page==CAMPAIGN){scroll-=steps*dp(72);invalidate();}}
     private void entry(Canvas c,float l,float t,float rr,float b,int icon,String label,String sub,int id,boolean primary){
         boolean down=pressed==id;hv.set(l,t,rr,b);primary|=Ui.hovered(hv);
         ui.round(c,l,t,rr,b,dp(10),down?0xe03a120a:primary?0xd0281008:0xb0140808);
@@ -117,7 +123,7 @@ final class MenuView extends View implements Pointer.Aware {
         ui.hit(l,t,rr,b,id);
     }
     private static final String[] MAIN_ITEMS={"Campaign","Custom levels","Level editor","Settings","Quit"};
-    private static final String[] MAIN_SUBS={"Hell's Gate · The Molten Keep","Play the levels you've built","Build a level with sectors and entities","Look speed, graphics","Leave the game"};
+    private static final String[] MAIN_SUBS={"Eight maps · the story of Slayer","Play the levels you've built","Build a level with sectors and entities","Look speed, graphics, music","Leave the game"};
     private static final int[] MAIN_ICONS={Icons.PLAY,Icons.FOLDER,Icons.SECTORS,Icons.LAYERS,Icons.CANCEL};
     private void mainMenu(Canvas c,float w,float h){
         float bw=Math.min(dp(360),w*.42f),l=w-bw-dp(40),rr=w-dp(40),bh=Math.min(dp(62),(h-dp(80))/5.6f),gap=dp(10);
@@ -126,11 +132,25 @@ final class MenuView extends View implements Pointer.Aware {
         ui.text(c,"v0.2 · sector maps",dp(48),h-dp(20),10.5f,0x70e0c0a0,0,-1);
     }
     private void campaign(Canvas c,float w,float h){
-        float l=dp(80),rr=Math.min(w-dp(40),l+dp(560)),bh=dp(78),gap=dp(12),top=dp(96);
-        for(int i=0;i<Maps.count();i++){float t=top+i*(bh+gap);
-            entry(c,l,t,rr,t+bh,Icons.FLAG,"MAP "+(i+1)+" · "+Maps.CAMPAIGN[i].toUpperCase(),i==0?"The gate of hell: a great hall, an armoury, the upper gallery":"An octagonal keep over lava: island altar, terraces, the temple",H_PLAY+i,i==0);
-            r.set(rr-dp(108),t+bh*.5f-dp(18),rr-dp(14),t+bh*.5f+dp(18));ui.button(c,r,Icons.SECTORS,"Edit copy",Ui.NORMAL);ui.hit(r,H_EDIT+i);}
-        ui.text(c,"\"Edit copy\" opens the map in the level editor as a new custom level.",l,top+Maps.count()*(bh+gap)+dp(14),11.5f,0x90e0c0a0,0,-1);
+        int open=unlocked(getContext());boolean done=prefs.getBoolean("finished",false);
+        float l=dp(80),rr=Math.min(w-dp(40),l+dp(620)),bh=Math.min(dp(70),Math.max(dp(56),h*.17f)),gap=dp(10),top=dp(92);
+        r.set(rr-dp(210),dp(26),rr,dp(62));ui.button(c,r,Icons.PLAY,open==0&&!done?"Begin":"Continue · Map "+(open+1),Ui.PRIMARY);ui.hit(r,H_CONT);
+        float list=Maps.count()*(bh+gap)+dp(36),maxS=Math.max(0,list-(h-top-dp(6)));scroll=Math.max(0,Math.min(maxS,scroll));
+        int save=c.save();c.clipRect(0,top-dp(4),w,h);
+        for(int i=0;i<Maps.count();i++){float t=top+i*(bh+gap)-scroll;if(t+bh<top-dp(4)||t>h)continue;
+            if(i>open){   // locked: the name is known, the way is not
+                ui.round(c,l,t,rr,t+bh,dp(10),0x70100606);ui.outline(c,l,t,rr,t+bh,dp(10),0x20ffffff,dp(1));
+                float cx=l+dp(32),cy=t+bh*.5f;p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(2.2f));p.setColor(0x80e0c0a0);
+                r.set(cx-dp(6),cy-dp(13),cx+dp(6),cy+dp(1));c.drawArc(r,180,180,false,p);p.setStyle(Paint.Style.FILL);ui.round(c,cx-dp(9),cy-dp(5),cx+dp(9),cy+dp(9),dp(2),0x80e0c0a0);
+                ui.text(c,"MAP "+(i+1)+" · "+Maps.CAMPAIGN[i].toUpperCase(),l+dp(58),cy-dp(1),17,0x70f4e8e0,2,-1);
+                ui.text(c,"Finish map "+i+" to open the way",l+dp(58),cy+dp(16),11.5f,0x60e0c0a0,0,-1);continue;}
+            entry(c,l,t,rr,t+bh,i<open||done?Icons.CHECK:Icons.FLAG,"MAP "+(i+1)+" · "+Maps.CAMPAIGN[i].toUpperCase(),ui.ellipsize(Maps.BLURBS[i],11.5f,0,rr-l-dp(200)),H_PLAY+i,i==open&&!done);
+            r.set(rr-dp(128),t+bh*.5f-dp(18),rr-dp(14),t+bh*.5f+dp(18));ui.button(c,r,Icons.SECTORS,"Edit copy",Ui.NORMAL);ui.hit(r,H_EDIT+i);}
+        ui.text(c,"\"Edit copy\" opens the map in the level editor as a new custom level.",l,top+Maps.count()*(bh+gap)+dp(14)-scroll,11.5f,0x90e0c0a0,0,-1);
+        c.restoreToCount(save);
+        if(scroll>1){p.setShader(new android.graphics.LinearGradient(0,top-dp(4),0,top+dp(24),0xc0080404,0x00080404,android.graphics.Shader.TileMode.CLAMP));c.drawRect(0,top-dp(4),w,top+dp(24),p);p.setShader(null);}
+        if(scroll<maxS-1){p.setShader(new android.graphics.LinearGradient(0,h-dp(30),0,h,0x00080404,0xc0080404,android.graphics.Shader.TileMode.CLAMP));c.drawRect(0,h-dp(30),w,h,p);p.setShader(null);
+            ui.icon(c,Icons.CHEVRON_DOWN,w/2,h-dp(12),16,0xa0ffb080);}
     }
     private void custom(Canvas c,float w,float h){
         float l=dp(80),rr=Math.min(w-dp(40),l+dp(640)),top=dp(92);
@@ -157,10 +177,10 @@ final class MenuView extends View implements Pointer.Aware {
     }
     private static final int[] LINES={200,270,360,540};
     private void settings(Canvas c,float w,float h){
-        String[] labels={"Look speed","Invert look","Render resolution","Show frame rate","Aim assist"};
+        String[] labels={"Look speed","Invert look","Render resolution","Show frame rate","Aim assist","Music"};
         float l=dp(80),rr=Math.min(w-dp(40),l+dp(560)),top=dp(88),gap=Math.min(dp(8),Math.max(dp(4),(h-top-dp(12))*.025f)),
             rowH=Math.min(dp(50),(h-top-dp(12)-gap*(labels.length-1))/labels.length);   // rows shrink to fit short screens
-        String[] vals={String.format(java.util.Locale.US,"%.1f",Game.lookSens*1000),Game.invertLook?"On":"Off",Game.RENDER_LINES+" lines"+(Game.RENDER_LINES==270?" (like RPG Pocket Editor)":""),Hud.showFps?"On":"Off",Game.aimAssist?"On":"Off"};
+        String[] vals={String.format(java.util.Locale.US,"%.1f",Game.lookSens*1000),Game.invertLook?"On":"Off",Game.RENDER_LINES+" lines"+(Game.RENDER_LINES==270?" (like RPG Pocket Editor)":""),Hud.showFps?"On":"Off",Game.aimAssist?"On":"Off",Music.volume<=0?"Off":Math.round(Music.volume*100)+"%"};
         for(int i=0;i<labels.length;i++){float t=top+i*(rowH+gap);
             ui.round(c,l,t,rr,t+rowH,dp(10),0xb0140808);ui.outline(c,l,t,rr,t+rowH,dp(10),0x40ffffff,dp(1));
             ui.textMid(c,labels[i],l+dp(20),t+rowH*.5f,16,0xfff4e8e0,1,-1);float in=Math.min(dp(10),rowH*.18f);
@@ -193,7 +213,7 @@ final class MenuView extends View implements Pointer.Aware {
         ui.text(c,m+":"+(s<10?"0":"")+s,cx+dp(80),sy,28,0xffffffff,2,0);ui.text(c,"TIME",cx+dp(80),sy+dp(20),11,0xa0e0c0a0,1,0);
         int n=hasNext?3:2;float bw=Math.min(dp(380),side?w*.42f:w*.5f),l=side?w*.53f:(w-bw)/2;
         float[] st=stack(n,side?top:sy+dp(36),bottom);float bh=st[0],gap=st[1],t=st[2];
-        if(hasNext){entry(c,l,t,l+bw,t+bh,Icons.PLAY,"Next level",null,H_ITEM+30,true);t+=bh+gap;}
+        if(hasNext){entry(c,l,t,l+bw,t+bh,Icons.PLAY,finale?"Continue":"Next level",finale?"The end of the road":null,H_ITEM+30,true);t+=bh+gap;}
         entry(c,l,t,l+bw,t+bh,Icons.RESET,"Play again",null,H_ITEM+21,!hasNext);t+=bh+gap;
         entry(c,l,t,l+bw,t+bh,fromEditor?Icons.SECTORS:Icons.ARROW_LEFT,fromEditor?"Back to the editor":"Main menu",null,H_ITEM+22,false);
     }
@@ -202,7 +222,7 @@ final class MenuView extends View implements Pointer.Aware {
     @Override public boolean onTouchEvent(MotionEvent e){
         int a=e.getActionMasked();float x=e.getX(),y=e.getY();
         if(a==MotionEvent.ACTION_DOWN){pressed=ui.hitAt(x,y);downY=lastY=y;dragged=false;invalidate();return true;}
-        if(a==MotionEvent.ACTION_MOVE){if(Math.abs(y-downY)>dp(10)){dragged=true;pressed=-1;}if(dragged&&page==CUSTOM){scroll-=y-lastY;invalidate();}lastY=y;return true;}
+        if(a==MotionEvent.ACTION_MOVE){if(Math.abs(y-downY)>dp(10)){dragged=true;pressed=-1;}if(dragged&&(page==CUSTOM||page==CAMPAIGN)){scroll-=y-lastY;invalidate();}lastY=y;return true;}
         if(a==MotionEvent.ACTION_UP){int hid=ui.hitAt(x,y);if(!dragged&&hid==pressed&&hid>=0)tap(hid);pressed=-1;invalidate();return true;}
         if(a==MotionEvent.ACTION_CANCEL){pressed=-1;invalidate();}
         return true;
@@ -212,6 +232,7 @@ final class MenuView extends View implements Pointer.Aware {
         if(page==SKILL&&id>=H_SKILL&&id<H_SKILL+5){Skill.current=id-H_SKILL;prefs.edit().putInt("skill",Skill.current).apply();
             if(pendingCustom!=null)host.playCustom(pendingCustom);else if(pendingCampaign>=0)host.playCampaign(pendingCampaign);return;}
         if(page==MAIN&&id>=H_ITEM&&id<H_ITEM+5){switch(id-H_ITEM){case 0:show(CAMPAIGN);break;case 1:show(CUSTOM);break;case 2:newLevel();break;case 3:show(SETTINGS);break;default:host.quit();}return;}
+        if(page==CAMPAIGN&&id==H_CONT){pendingCampaign=unlocked(getContext());pendingCustom=null;skillFrom=CAMPAIGN;show(SKILL);return;}
         if(page==CAMPAIGN){if(id>=H_PLAY&&id<H_PLAY+Maps.count()){pendingCampaign=id-H_PLAY;pendingCustom=null;skillFrom=CAMPAIGN;show(SKILL);return;}
             if(id>=H_EDIT&&id<H_EDIT+Maps.count()){SectorMap m=Maps.campaign(id-H_EDIT);m.name=m.name+" (copy)";host.editMap(null,m);return;}}
         if(page==CUSTOM){
@@ -226,6 +247,7 @@ final class MenuView extends View implements Pointer.Aware {
             else if(id==H_SET+2){int k=0;for(int i=0;i<LINES.length;i++)if(LINES[i]==Game.RENDER_LINES)k=i;Game.RENDER_LINES=LINES[(k+1)%LINES.length];}
             else if(id==H_SET+3)Hud.showFps=!Hud.showFps;
             else if(id==H_SET+4)Game.aimAssist=!Game.aimAssist;
+            else if(id==H_SET+5){float[] v={0,.4f,.6f,.8f,1f};int k=0;for(int i=0;i<v.length;i++)if(Math.abs(v[i]-Music.volume)<.05f)k=i;Music.volume=v[(k+1)%v.length];}
             saveSettings();return;}
         if(id==H_ITEM+20){host.resume();return;}
         if(id==H_ITEM+21){host.restart();return;}
@@ -233,7 +255,7 @@ final class MenuView extends View implements Pointer.Aware {
         if(id==H_ITEM+30){host.nextLevel();}
     }
     private void newLevel(){
-        String[] items={"Blank level (one room)","Start from Hell's Gate","Start from The Molten Keep"};
+        String[] items=new String[1+Maps.count()];items[0]="Blank level (one room)";for(int i=0;i<Maps.count();i++)items[i+1]="Start from "+Maps.CAMPAIGN[i];
         Overlay.get().choose("New level",items,-1,i->{
             SectorMap m=i==0?Maps.blank():Maps.campaign(i-1);m.name=i==0?"New level":m.name+" (copy)";host.editMap(null,m);});
     }

@@ -22,6 +22,13 @@ final class Game implements GLSurfaceView.Renderer {
     Listener listener;
     volatile boolean paused;private boolean completed;private float playTime;
     volatile String banner;volatile float bannerT;
+    /** The keys she carries (bit 0 red, 1 blue, 2 yellow), for the HUD. */
+    volatile int keys;private float lockedCool;
+    /** A demon is hunting her (alerted and near), held a few seconds after the last one: the music drops. */
+    volatile boolean inCombat;private float combatHold;
+    /** Told when combat starts or stops (on the GL thread). */
+    java.util.function.Consumer<Boolean> onCombat;
+    private Gfx.Mesh[] doorMesh=new Gfx.Mesh[0];private Gfx.Mesh keyMesh;
 
     Game(Context c,SectorMap m){ctx=c;map=m;level=new Level(m);pl.spawn(level);hero.bodyYaw=pl.yaw;enemies=new Enemies(level,pl);demonsTotal=enemies.demons.size();}
 
@@ -51,6 +58,7 @@ final class Game implements GLSurfaceView.Renderer {
         float[][] g=Gun.build();parts=new Gfx.Mesh[g.length];for(int i=0;i<g.length;i++)parts[i]=g[i]==null?null:new Gfx.Mesh(g[i]);
         loadBakedGun();loadHero();loadSaw();loadDemon();
         maskTex=Gfx.maskTexture(level.lightMask,level.W,level.H);
+        buildDoors();keyMesh=new Gfx.Mesh(box(-.17f,-.025f,-.11f,.17f,.025f,.11f));
         decalStream=new Gfx.Stream(3,2,1);partStream=new Gfx.Stream(3,2,4);bloodStream=new Gfx.Stream(3,2,4,1);
         for(int i=0;i<Tex.COUNT;i++)tex[i]=null;firstReady=false;
         GLES30.glEnable(GLES30.GL_DEPTH_TEST);GLES30.glDepthFunc(GLES30.GL_LEQUAL);GLES30.glDisable(GLES30.GL_CULL_FACE);
@@ -235,8 +243,8 @@ final class Game implements GLSurfaceView.Renderer {
         if(pl.bumpSpeed>0){sfx.play(Sfx.LAND,Math.min(1,pl.bumpSpeed/5)*.7f,1.2f);hero.bump(pl.bumpNx,pl.bumpNy,pl.bumpSpeed);}
         updateSaw(dt);
         if(hero.steps>0&&pl.onGround)sfx.play(Sfx.STEP,.3f+.15f*hero.run,.9f+fx.rng.nextFloat()*.2f);
-        if(pl.deaths!=lastDeaths){lastDeaths=pl.deaths;enemies.reset();for(Level.Pickup pk:level.pickups)pk.taken=false;cells=Math.max(cells,Math.round(START_CELLS*Skill.ammo()));blood.drops.clear();banner="YOU DIED";bannerT=2.5f;}   // she died: the level starts over
-        pickups(dt);
+        if(pl.deaths!=lastDeaths){lastDeaths=pl.deaths;enemies.reset();for(Level.Pickup pk:level.pickups)pk.taken=false;keys=0;level.resetDoors();cells=Math.max(cells,Math.round(START_CELLS*Skill.ammo()));blood.drops.clear();banner="YOU DIED";bannerT=2.5f;}   // she died: the level starts over
+        pickups(dt);doors(dt);combat(dt);
         playTime+=dt;bannerT=Math.max(0,bannerT-dt);
         {SectorMap.Sector here=level.sectorAt(pl.x,pl.y);if(!completed&&here!=null&&here.special==SectorMap.SP_EXIT&&pl.onGround){completed=true;if(listener!=null)listener.levelComplete(demonsTotal-enemies.alive(),demonsTotal,playTime);}}
         enemies.update(dt,time);demonEvents();
@@ -310,6 +318,8 @@ final class Game implements GLSurfaceView.Renderer {
         java.util.ArrayList<float[]>[] geo=level.build();for(int i=0;i<Tex.COUNT;i++){if(levelMesh[i]!=null)levelMesh[i].release();levelMesh[i]=new Gfx.Mesh(geo[i].get(0));}
         needMaterials(geo,false);
         GLES30.glDeleteTextures(1,new int[]{maskTex},0);maskTex=Gfx.maskTexture(level.lightMask,level.W,level.H);
+        if(editMode)for(Level.Door d:level.doors)level.openDoor(d);   // the editor walks through doorways
+        buildDoors();
         enemies=new Enemies(level,pl);
     }
     private void editUpdate(float dt){
@@ -479,8 +489,11 @@ final class Game implements GLSurfaceView.Renderer {
             if(p.type==SectorMap.T_HEALTH){   // a pulsing orb of hellfire
                 if(fx.rng.nextFloat()<.7f)fx.spawn(Fx.ADD,p.x+fx.rnd(-.06f,.06f),p.y+fx.rnd(-.06f,.06f),p.z+bob+fx.rnd(-.06f,.06f),fx.rnd(-.1f,.1f),fx.rnd(-.1f,.1f),fx.rnd(.05f,.3f),fx.rnd(.25f,.45f),fx.rnd(.05f,.09f),-.1f,0,.5f,1f,.18f,.12f,1);
                 if(fx.rng.nextFloat()<.25f)fx.spawn(Fx.STAR,p.x,p.y,p.z+bob,0,0,0,.12f,.22f+.05f*(float)Math.sin(time*6),0,0,0,1f,.3f,.25f,1);}
+            else if(SectorMap.isKey(p.type)){int c=SectorMap.KEY_RGB[p.type-SectorMap.T_KEY_RED];if(fx.rng.nextFloat()<.5f){float a=time*3+fx.rng.nextFloat()*.4f;
+                fx.spawn(Fx.ADD,p.x+(float)Math.cos(a)*.35f,p.y+(float)Math.sin(a)*.35f,p.z+.75f+fx.rnd(-.15f,.15f),0,0,fx.rnd(.1f,.3f),fx.rnd(.3f,.6f),fx.rnd(.04f,.07f),0,0,.5f,((c>>16)&255)/255f,((c>>8)&255)/255f,(c&255)/255f,1);}}
             else fx.cell(p.x,p.y,p.z+bob-.1f,time+p.x);
             float dx=p.x-pl.x,dy=p.y-pl.y;if(editMode||dx*dx+dy*dy>.85f*.85f||Math.abs(p.z-pl.z)>1.2f)continue;
+            if(SectorMap.isKey(p.type)){int k=p.type-SectorMap.T_KEY_RED;keys|=1<<k;sfx.play(Sfx.PICKUP,1f,.7f);sfx.play(Sfx.CHARGE,.6f,1.2f);banner=SectorMap.KEY_NAMES[k]+" KEY";bannerT=2f;p.taken=true;continue;}
             if(p.type==SectorMap.T_HEALTH){if(pl.health>=100)continue;pl.health=Math.min(100,pl.health+25);sfx.play(Sfx.PICKUP,.9f,1.2f);banner="+25 HEALTH";}
             else{if(cells>=MAX_CELLS)continue;int add=Math.round(PICKUP_CELLS*Skill.ammo());cells=Math.min(MAX_CELLS,cells+add);sfx.play(Sfx.PICKUP,.8f,.85f);sfx.play(Sfx.CHARGE,.4f,1.6f);banner="+"+add+" CELLS";}
             bannerT=1.4f;p.taken=true;}
@@ -580,9 +593,9 @@ final class Game implements GLSurfaceView.Renderer {
         float[] vp=M.mul(M.perspective((float)Math.toRadians(camFov),aspect,.05f,120f),view);
         GLES30.glViewport(0,0,W,H);GLES30.glClearColor(.02f,.01f,.008f,1);GLES30.glDepthMask(true);GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT|GLES30.GL_DEPTH_BUFFER_BIT);
         // lights: the level's, flickering over lava, plus the muzzle flash in the last slot
-        int n=Math.min(13,level.lights.size());
-        for(int i=0;i<16;i++){
-            if(i<n){Level.Light L=level.lights.get(i);float k=L.flicker?.75f+.25f*(float)Math.sin(time*7.3f+i*1.7f)*(float)Math.sin(time*3.1f+i):1;
+        if(level.pickLights(pl.x,pl.y,false)){GLES30.glDeleteTextures(1,new int[]{maskTex},0);maskTex=Gfx.maskTexture(level.lightMask,level.W,level.H);}   // the nearest lights stream in
+        for(int i=0;i<16;i++){Level.Light L=i<Level.MAX_LIGHTS?level.slotLight(i):null;
+            if(L!=null){float k=L.flicker?.75f+.25f*(float)Math.sin(time*7.3f+i*1.7f)*(float)Math.sin(time*3.1f+i):1;
                 lights[i*4]=L.x;lights[i*4+1]=L.y;lights[i*4+2]=L.z;lights[i*4+3]=L.radius;lightCol[i*3]=L.r*k;lightCol[i*3+1]=L.g*k;lightCol[i*3+2]=L.b*k;}
             else if(i==15&&flash>0&&hero.cannonMat!=null){float[] mz=M.pt(hero.cannonMat,Demon.MUZZLE_LOCAL);float k=flash/.07f;lights[60]=mz[0]+f[0]*.3f;lights[61]=mz[1]+f[1]*.3f;lights[62]=mz[2]+f[2]*.3f;lights[63]=11;lightCol[45]=2.5f*k;lightCol[46]=9*k;lightCol[47]=3*k;}
             else{lights[i*4+3]=0;lightCol[i*3]=lightCol[i*3+1]=lightCol[i*3+2]=0;}}
@@ -601,6 +614,7 @@ final class Game implements GLSurfaceView.Renderer {
             GLES30.glUniform2f(u(prog,"uUvScroll"),flow?time*.012f:0,flow?time*.007f:0);GLES30.glUniform1f(u(prog,"uPulse"),flow?1:0);
             levelMesh[m].draw();}
         GLES30.glUniform2f(u(prog,"uUvScroll"),0,0);GLES30.glUniform1f(u(prog,"uPulse"),0);
+        drawDoors();
         GLES30.glUniform1f(u(prog,"uEnvK"),5f);if(!editMode)drawPlayer();drawDemons(eye);GLES30.glUniform1f(u(prog,"uEnvK"),1f);
         // spent shells lying around
         for(Fx.Shell s:fx.shells){float[] Mx=M.mul(M.tr(s.x,s.y,s.z),M.mul(M.rz(s.yaw),M.mul(M.ry(s.pitch),M.rx(s.roll))));model(Mx);
@@ -608,6 +622,62 @@ final class Game implements GLSurfaceView.Renderer {
         drawDecals(vp,eye);drawBlood(vp,eye);
         drawParticles(vp,right,upR);
         GLES30.glBindVertexArray(0);
+    }
+    /** Puts her somewhere (the desktop's screenshot run). */
+    void debugPlace(float x,float y,float yaw){pl.x=x;pl.y=y;pl.z=level.floorUnder(x,y,Player.RADIUS);pl.vx=pl.vy=pl.vz=0;pl.yaw=yaw;hero.bodyYaw=yaw;camPZ=Float.NaN;}
+
+    // ------------------------------------------------------------------ combat state (for the music)
+    private void combat(float dt){
+        boolean hunted=false;
+        for(Demon d:enemies.demons){if(d.dead||!d.ai.alerted)continue;float dx=d.body.x-pl.x,dy=d.body.y-pl.y;if(dx*dx+dy*dy<38*38){hunted=true;break;}}
+        if(hunted||glory!=null)combatHold=5.5f;else combatHold=Math.max(0,combatHold-dt);
+        boolean c=combatHold>0&&pl.health>0;
+        if(c!=inCombat){inCombat=c;if(onCombat!=null)onCombat.accept(c);}
+    }
+
+    // ------------------------------------------------------------------ doors and keys
+    private void buildDoors(){
+        for(Gfx.Mesh m:doorMesh)if(m!=null)m.release();
+        doorMesh=new Gfx.Mesh[level.doors.size()];
+        for(int i=0;i<doorMesh.length;i++){Level.Door d=level.doors.get(i);doorMesh[i]=new Gfx.Mesh(level.doorSlab(d,0,d.top-d.floor));}
+    }
+    /** A box (11-float vertices, outward normals) for small props: the keys. */
+    static float[] box(float x0,float y0,float z0,float x1,float y1,float z1){
+        Level.FloatList o=new Level.FloatList();
+        // each face: normal, tangent, and its four corners counter-clockwise seen from outside
+        float[][][] F={
+            {{1,0,0},{0,1,0},{x1,y0,z0},{x1,y1,z0},{x1,y1,z1},{x1,y0,z1}},
+            {{-1,0,0},{0,-1,0},{x0,y1,z0},{x0,y0,z0},{x0,y0,z1},{x0,y1,z1}},
+            {{0,1,0},{-1,0,0},{x1,y1,z0},{x0,y1,z0},{x0,y1,z1},{x1,y1,z1}},
+            {{0,-1,0},{1,0,0},{x0,y0,z0},{x1,y0,z0},{x1,y0,z1},{x0,y0,z1}},
+            {{0,0,1},{1,0,0},{x0,y0,z1},{x1,y0,z1},{x1,y1,z1},{x0,y1,z1}},
+            {{0,0,-1},{1,0,0},{x0,y1,z0},{x1,y1,z0},{x1,y0,z0},{x0,y0,z0}}};
+        float[][] uv={{0,1},{1,1},{1,0},{0,0}};
+        for(float[][] f:F)for(int k:new int[]{0,1,2,0,2,3}){float[] v=f[2+k];o.add(v[0],v[1],v[2],f[0][0],f[0][1],f[0][2],f[1][0],f[1][1],f[1][2],uv[k][0],uv[k][1]);}
+        return o.toArray();
+    }
+    private void doors(float dt){
+        lockedCool=Math.max(0,lockedCool-dt);
+        int ev=level.updateDoors(dt,pl.x,pl.y,pl.z,keys);
+        if((ev&Level.DOOR_OPENED)!=0){sfx.play(Sfx.LAND,.9f,.55f);sfx.play(Sfx.CHARGE,.5f,.6f);}
+        if((ev&Level.DOOR_LOCKED)!=0&&lockedCool<=0&&level.lockedKey>=0){banner="YOU NEED THE "+SectorMap.KEY_NAMES[level.lockedKey]+" KEY";bannerT=2f;lockedCool=2.5f;sfx.play(Sfx.HIT,.6f,.5f);}
+        // locked doors shed sparks of their key's colour along the bottom edge
+        for(Level.Door d:level.doors){if(d.key<0||d.open>.01f||fx.rng.nextFloat()>.35f)continue;int c=SectorMap.KEY_RGB[d.key];
+            float r=level.doorRadius(d)*.8f,a=fx.rng.nextFloat()*6.283f;
+            fx.spawn(Fx.ADD,d.cx+(float)Math.cos(a)*r*fx.rng.nextFloat(),d.cy+(float)Math.sin(a)*r*fx.rng.nextFloat(),d.floor+fx.rnd(.05f,2.2f),0,0,fx.rnd(.05f,.2f),fx.rnd(.4f,.8f),fx.rnd(.03f,.06f),0,0,.5f,((c>>16)&255)/255f,((c>>8)&255)/255f,(c&255)/255f,1);}
+    }
+    private void drawDoors(){
+        for(int i=0;i<doorMesh.length&&i<level.doors.size();i++){Level.Door d=level.doors.get(i);if(doorMesh[i]==null||doorMesh[i].count==0||d.open>=1)continue;
+            SectorMap.Sector S=level.map.sectors.get(d.sector);if(tex[S.ceilTex]==null)continue;
+            model(M.tr(0,0,S.ceil-d.floor));bindMat(S.ceilTex,false);
+            if(d.key>=0){int c=SectorMap.KEY_RGB[d.key];float k=.22f+.12f*(float)Math.sin(time*3+i);GLES30.glUniform4f(u(prog,"uGlow"),((c>>16)&255)/255f,((c>>8)&255)/255f,(c&255)/255f,k);}
+            doorMesh[i].draw();GLES30.glUniform4f(u(prog,"uGlow"),0,0,0,0);}
+        // keys: a spinning, glowing card above the floor
+        if(keyMesh!=null&&tex[Tex.SHELL]!=null)for(Level.Pickup p:level.pickups){if(p.taken||!SectorMap.isKey(p.type))continue;int c=SectorMap.KEY_RGB[p.type-SectorMap.T_KEY_RED];
+            float bob=.75f+.1f*(float)Math.sin(time*2.2f+p.x);
+            model(M.mul(M.tr(p.x,p.y,p.z+bob),M.mul(M.rz(time*1.8f),M.rx(.25f))));bindMat(Tex.SHELL,false);
+            GLES30.glUniform4f(u(prog,"uGlow"),((c>>16)&255)/255f,((c>>8)&255)/255f,(c&255)/255f,1.1f+.4f*(float)Math.sin(time*5));keyMesh.draw();}
+        GLES30.glUniform4f(u(prog,"uGlow"),0,0,0,0);model(M.id());
     }
     private void model(float[] m){GLES30.glUniformMatrix4fv(u(prog,"uModel"),1,false,m,0);GLES30.glUniformMatrix3fv(u(prog,"uNrmM"),1,false,M.nrm(m),0);}
     private void bindMat(int m,boolean pom){

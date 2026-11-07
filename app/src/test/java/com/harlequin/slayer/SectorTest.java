@@ -95,14 +95,40 @@ public class SectorTest {
             assertEquals(m.name,"Geometry valid",new MapEditor(m).validateMap());
             for(int s=0;s<m.sectors.size();s++){float want=Math.abs(m.area(m.sectors.get(s)));for(int h:m.holes.get(s))want-=Math.abs(m.area(m.sectors.get(h)));
                 assertEquals(m.name+" sector "+s+" floor covers its area",want,triArea(m.triangulate(s)),.01f);}
-            Nav nav=new Nav(L);nav.target(L.spawnX,L.spawnY);
+            // play it through: plain doors open, keys open their doors, until nothing more opens
+            Nav nav=new Nav(L);int keys=0;boolean keyedOnPath=false,more=true;int keyedDoors=0;
+            for(Level.Door d:L.doors){if(d.key<0)L.openDoor(d);else{keyedDoors++;
+                boolean has=false;for(Level.Pickup p:L.pickups)has|=p.type==SectorMap.T_KEY_RED+d.key;assertTrue(m.name+": a door's "+SectorMap.KEY_NAMES[d.key]+" key is on the map",has);}}
+            while(more){more=false;nav.target(L.spawnX,L.spawnY);
+                if(keys==0&&keyedDoors>0)keyedOnPath=!exitReachable(m,nav);
+                for(Level.Pickup p:L.pickups)if(SectorMap.isKey(p.type)&&nav.distAt(p.x,p.y)<Nav.INF)keys|=1<<(p.type-SectorMap.T_KEY_RED);
+                for(Level.Door d:L.doors)if(!d.passable()&&(keys&(1<<d.key))!=0){L.openDoor(d);more=true;}}
+            for(Level.Door d:L.doors)assertTrue(m.name+": every door opens",d.passable());
+            if(i>0){assertTrue(m.name+" has key doors",keyedDoors>=1);assertTrue(m.name+": a key is needed to reach the exit",keyedOnPath);}
             for(float[] d:L.demonSpawns)assertTrue(m.name+": demon at "+d[0]+","+d[1]+" can reach her",nav.distAt(d[0],d[1])<Nav.INF);
             for(Level.Pickup p:L.pickups)assertTrue(m.name+": pickup at "+p.x+","+p.y+" reachable",nav.distAt(p.x,p.y)<Nav.INF);
-            boolean exit=false;for(SectorMap.Sector s:m.sectors)if(s.special==SectorMap.SP_EXIT){float[] c=m.centroid(s);exit|=nav.distAt(c[0],c[1])<Nav.INF;}
-            assertTrue(m.name+" has a reachable exit",exit);
+            assertTrue(m.name+" has a reachable exit",exitReachable(m,nav));
+            float w=m.maxX()-m.minX(),h=m.maxY()-m.minY();assertTrue(m.name+" is big ("+w+" x "+h+")",w*h>=(i==0?2400:3200));
             assertFalse(m.name+": the start is clear",L.blocked(L.spawnX,L.spawnY,L.floorUnder(L.spawnX,L.spawnY,.3f),Player.RADIUS,Player.HEIGHT));
             assertTrue(m.name+" has demons",L.demonSpawns.size()>=5);
-            assertTrue(m.name+" lights",L.lights.size()>=6&&L.lights.size()<=Level.MAX_LIGHTS);}
+            assertTrue(m.name+" lights",L.lights.size()>=6&&L.lights.size()<=Level.MAX_LEVEL_LIGHTS);}
+    }
+    private static boolean exitReachable(SectorMap m,Nav nav){boolean exit=false;for(SectorMap.Sector s:m.sectors)if(s.special==SectorMap.SP_EXIT){float[] c=m.centroid(s);exit|=nav.distAt(c[0],c[1])<Nav.INF;}return exit;}
+    @Test public void doorsOpenWithTheirKeyAndStreamLights(){
+        Maps.B b=new Maps.B("door test");
+        b.rect(0,0,8,8,0,4,Tex.FLOOR_TILES,Tex.CONCRETE,Tex.BRICK);
+        b.door(3,8,5,9,0,3,0,Tex.METAL_PANEL,Tex.BRICK);
+        b.rect(0,9,8,17,0,4,Tex.FLOOR_TILES,Tex.CONCRETE,Tex.BRICK);
+        b.start(4,2,(float)Math.PI/2);SectorMap m=b.done();Level L=new Level(m);
+        assertEquals(1,L.doors.size());Level.Door door=L.doors.get(0);
+        assertTrue("shut doors block",L.blocked(4,8.5f,0,.3f,1.8f));
+        Nav nav=new Nav(L);nav.target(4,2);assertTrue(nav.distAt(4,13)>=Nav.INF);
+        assertEquals(Level.DOOR_LOCKED,L.updateDoors(.1f,4,7.2f,0,0)&Level.DOOR_LOCKED);assertEquals(0,L.lockedKey);
+        L.updateDoors(.1f,4,7.2f,0,1);for(int k=0;k<20;k++)L.updateDoors(.1f,4,7.2f,0,1);
+        assertTrue(door.passable());assertFalse("open doors don't",L.blocked(4,8.5f,0,.3f,1.8f));
+        nav.target(4,2);assertTrue(nav.distAt(4,13)<Nav.INF);
+        float[] geo=L.doorSlab(door,0,3);assertTrue(geo.length>0);
+        L.resetDoors();assertFalse(door.passable());
     }
     @Test public void mapStoreSavesAndLists()throws Exception{
         java.io.File dir=java.nio.file.Files.createTempDirectory("maps").toFile();MapStore st=new MapStore(dir);

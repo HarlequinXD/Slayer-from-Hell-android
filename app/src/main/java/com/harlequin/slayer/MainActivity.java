@@ -17,7 +17,7 @@ import android.view.PointerIcon;
  * view with the touch HUD on top, and the pause / level-complete overlays over that).
  */
 public final class MainActivity extends Activity implements MenuView.Host,EditorView.Host,Edit3DView.Host,Controls.Shell {
-    private FrameLayout root;private Sfx sfx;private MapStore store;
+    private FrameLayout root;private Sfx sfx;private MapStore store;private Music music;private StoryView story;
     private final Devices dev=new Devices();private Overlay layer;private Controls controls;private long lastFrame;
     private final Choreographer.FrameCallback tick=new Choreographer.FrameCallback(){public void doFrame(long t){
         float dt=lastFrame==0?1/60f:Math.min(.05f,(t-lastFrame)/1e9f);lastFrame=t;controls.frame(dt);Choreographer.getInstance().postFrameCallback(this);}};
@@ -34,6 +34,7 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON|WindowManager.LayoutParams.FLAG_FULLSCREEN);
         if(android.os.Build.VERSION.SDK_INT>=28)getWindow().getAttributes().layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         sfx=new Sfx(this);store=new MapStore(getFilesDir());
+        music=new Music();music.prepare(MusicSynth.HELL);music.prepare(MusicSynth.TECH);   // rendered in the background while she reads the menu
         root=new FrameLayout(this);setContentView(root);
         layer=new Overlay(this);root.addView(layer);controls=new Controls(dev,layer,this);
         root.setPointerIcon(PointerIcon.getSystemIcon(this,PointerIcon.TYPE_NULL));   // our own cursor is drawn instead
@@ -49,13 +50,14 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
     @Override public void onWindowFocusChanged(boolean f){super.onWindowFocusChanged(f);if(f)immersive();}
 
     // ---------------------------------------------------------------- screens
-    private void showMenu(int page){stopGame();clearScreens();editor=null;menu=new MenuView(this,this,store);addScreen(menu);menu.show(page);}
+    private void showMenu(int page){stopGame();clearScreens();editor=null;story=null;music.stop();menu=new MenuView(this,this,store);addScreen(menu);menu.show(page);}
     private void stopGame(){
         if(gl!=null){gl.onPause();gl=null;}game=null;hud=null;overlay=null;sfx.engine(0,1);
     }
     private void startGame(SectorMap m){
         stopGame();clearScreens();playing=m.copy();view3d=null;
         game=new Game(this,m);game.sfx=sfx;sfx.restartLoops();
+        music.play(Music.themeOf(m));game.onCombat=c->music.combat(c);
         hud=new Hud(this,game);game.hud=hud;hud.onPause=()->runOnUiThread(this::pauseGame);
         game.listener=(k,t,s)->runOnUiThread(()->levelComplete(k,t,s));
         gl=new GLSurfaceView(this);   // full-resolution surface: Game renders at RENDER_LINES lines and point-scales up itself
@@ -67,24 +69,31 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
         if(game==null)return;
         if(overlay!=null)root.removeView(overlay);
         overlay=new MenuView(this,this,store);overlay.fromEditor=fromEditor;addScreen(overlay);
-        if(page==MenuView.COMPLETE)overlay.hasNext=campaign>=0&&campaign+1<Maps.count();
+        if(page==MenuView.COMPLETE){overlay.hasNext=campaign>=0;overlay.finale=campaign+1>=Maps.count();}
         overlay.show(page);
     }
     private void pauseGame(){if(game==null||overlay!=null)return;game.paused=true;sfx.engine(0,1);showOverlay(MenuView.PAUSE);}
     private void levelComplete(int kills,int total,float seconds){
-        if(game==null)return;game.paused=true;sfx.engine(0,1);showOverlay(MenuView.COMPLETE);
+        if(game==null)return;game.paused=true;sfx.engine(0,1);music.combat(false);
+        if(campaign>=0)MenuView.unlock(this,campaign+1);   // the next map is open now
+        showOverlay(MenuView.COMPLETE);
         overlay.kills=kills;overlay.total=total;overlay.seconds=seconds;overlay.doneName=playing.name;overlay.invalidate();
     }
 
     // ---------------------------------------------------------------- MenuView.Host
-    @Override public void playCampaign(int i){campaign=i;fromEditor=false;startGame(Maps.campaign(i));}
+    @Override public void playCampaign(int i){campaign=i;fromEditor=false;SectorMap m=Maps.campaign(i);story(Story.before(i),Music.themeOf(m),()->startGame(m));}
+    /** A chapter of the story on its own screen; `then` runs when she has read it (or skipped it). */
+    private void story(Story.Chapter ch,int theme,Runnable then){
+        stopGame();clearScreens();menu=null;editor=null;music.play(theme);
+        story=new StoryView(this,ch,()->root.post(()->{story=null;then.run();}));addScreen(story);
+    }
     @Override public void playCustom(String id){
         try{campaign=-1;fromEditor=false;startGame(store.load(id));}catch(Exception e){toast("Couldn't open that level: "+e.getMessage());}
     }
     @Override public void editMap(String id,SectorMap from){
         SectorMap m=from;
         if(m==null)try{m=store.load(id);}catch(Exception e){toast("Couldn't open that level: "+e.getMessage());return;}
-        stopGame();clearScreens();menu=null;
+        stopGame();clearScreens();menu=null;music.stop();
         editor=new EditorView(this,m,id,store,this);if(id==null)editor.autoSave();
         addScreen(editor);
     }
@@ -92,10 +101,15 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
     @Override public void resume(){if(game==null)return;if(overlay!=null){root.removeView(overlay);overlay=null;}game.paused=false;}
     @Override public void restart(){SectorMap m=playing;if(m!=null)startGame(m);}
     @Override public void leaveGame(){
-        if(fromEditor&&editor!=null){stopGame();clearScreens();addScreen(editor);editor.invalidate();return;}
+        if(fromEditor&&editor!=null){stopGame();clearScreens();music.stop();addScreen(editor);editor.invalidate();return;}
         showMenu(campaign>=0?MenuView.CAMPAIGN:MenuView.CUSTOM);
     }
-    @Override public void nextLevel(){if(campaign>=0&&campaign+1<Maps.count())playCampaign(campaign+1);else showMenu(MenuView.MAIN);}
+    @Override public void nextLevel(){
+        if(campaign<0){showMenu(MenuView.MAIN);return;}
+        MenuView.unlock(this,campaign+1);
+        if(campaign+1<Maps.count())playCampaign(campaign+1);
+        else{campaign=-1;story(Story.epilogue(),MusicSynth.HELL,()->showMenu(MenuView.CAMPAIGN));}   // the end
+    }
 
     // ---------------------------------------------------------------- EditorView.Host
     @Override public void exitEditor(){editor=null;showMenu(MenuView.CUSTOM);}
@@ -106,7 +120,7 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
     // ---------------------------------------------------------------- the editor's 3D view (the game renderer in edit mode)
     @Override public void open3D(){
         if(editor==null)return;
-        stopGame();clearScreens();
+        stopGame();clearScreens();music.stop();
         game=new Game(this,editor.map().copy());game.editMode=true;game.sfx=sfx;
         if(cam3d!=null)game.setEditCamera(cam3d[0],cam3d[1],cam3d[2],cam3d[3],cam3d[4]);
         gl=new GLSurfaceView(this);gl.setEGLContextClientVersion(3);gl.setEGLConfigChooser(8,8,8,8,24,0);gl.setPreserveEGLContextOnPause(true);
@@ -194,6 +208,7 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
     // ---------------------------------------------------------------- lifecycle
     @Override public void onBackPressed(){
         if(layer.back())return;
+        if(story!=null){story.finish();return;}   // back skips the chapter
         if(overlay!=null){overlay.back();return;}
         if(view3d!=null){back3D();return;}
         if(game!=null){pauseGame();return;}
@@ -201,6 +216,7 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
         if(menu!=null&&menu.back())return;
         super.onBackPressed();
     }
-    @Override protected void onPause(){super.onPause();if(gl!=null)gl.onPause();if(game!=null&&overlay==null&&view3d==null)pauseGame();sfx.pause();if(editor!=null)editor.autoSave();}
-    @Override protected void onResume(){super.onResume();scanPads();if(gl!=null)gl.onResume();sfx.resume();immersive();}
+    @Override protected void onDestroy(){music.release();super.onDestroy();}
+    @Override protected void onPause(){super.onPause();if(gl!=null)gl.onPause();if(game!=null&&overlay==null&&view3d==null)pauseGame();sfx.pause();music.pause();if(editor!=null)editor.autoSave();}
+    @Override protected void onResume(){super.onResume();scanPads();if(gl!=null)gl.onResume();sfx.resume();music.resume();immersive();}
 }

@@ -12,22 +12,38 @@ import java.util.ArrayList;
  */
 final class Level {
     /** One raster cell, sampled at its centre. */
-    static final class Cell {boolean solid,lava;float floor,ceil;int floorMat,sector=-1;}
+    static final class Cell {boolean solid,lava,shut;float floor,ceil;int floorMat,sector=-1,door=-1;}
+    /**
+     * A door: a sector whose ceiling comes down to its floor. It rises when she walks up to it (a keyed door only if she
+     * carries its key) and then stays open. Demons never open doors. While it isn't fully open its cells are shut
+     * to navigation; collision and sight use the sector's live ceiling.
+     */
+    static final class Door {final int sector,key;final float floor,top,cx,cy;float open;boolean opening;Door(int s,int k,float f,float t,float x,float y){sector=s;key=k;floor=f;top=t;cx=x;cy=y;}
+        boolean passable(){return open>.85f;}}
     static final class Light {float x,y,z,r,g,b,radius;boolean flicker;Light(float x,float y,float z,int rgb,float i,float radius,boolean fl){this.x=x;this.y=y;this.z=z;r=((rgb>>16)&255)/255f*i;g=((rgb>>8)&255)/255f*i;b=(rgb&255)/255f*i;this.radius=radius;flicker=fl;}}
     /** A health orb or a box of shells lying in the level. */
     static final class Pickup {final int type;final float x,y,z;boolean taken;Pickup(int t,float x,float y,float z){type=t;this.x=x;this.y=y;this.z=z;}}
 
     static final float STEP=.55f,CELL=.5f;
     static final int MAX_LIGHTS=13;   // light slots 13-15 are the game's own (fireballs, blasts, muzzle flash)
+    /** A map may have up to this many lights; the 13 nearest her are streamed into the slots as she moves. */
+    static final int MAX_LEVEL_LIGHTS=64;
     final SectorMap map;
     /** Raster: W x H cells of CELL metres, origin (ox, oy). */
     final int W,H;final float ox,oy;final Cell[] cells;
     final ArrayList<Light> lights=new ArrayList<>();
     final ArrayList<float[]> demonSpawns=new ArrayList<>();
     final ArrayList<Pickup> pickups=new ArrayList<>();
+    final ArrayList<Door> doors=new ArrayList<>();
+    /** Bumped whenever a door's passability changes (navigation fields rebuild). */
+    int navVersion;
     float spawnX,spawnY,spawnAngle;
-    /** Per raster cell: which level lights it can see (bit i = light i). */
+    /** Per raster cell: which of the streamed light slots it can see (bit i = slot i). */
     final int[] lightMask;
+    /** Per raster cell: which level lights it can see (bit i = light i, up to 64). */
+    private final long[] lightBits;
+    /** The level light in each slot (slot count = slotCount). */
+    final int[] slot=new int[MAX_LIGHTS];int slotCount;private float pickX=Float.NaN,pickY;
 
     /** The first campaign map. */
     Level(){this(Maps.campaign(0));}
@@ -42,13 +58,75 @@ final class Level {
         for(SectorMap.Thing t:m.things){
             if(!Skill.present(t.skills))continue;   // not on this difficulty
             if(t.type==SectorMap.T_DEMON)demonSpawns.add(new float[]{t.x,t.y,t.angle});
-            else if(t.type==SectorMap.T_HEALTH||t.type==SectorMap.T_SHELLS)pickups.add(new Pickup(t.type,t.x,t.y,floorUnder(t.x,t.y,0)));
-            else if(t.type>=SectorMap.T_LAMP_WARM&&t.type<=SectorMap.T_LAMP_WHITE&&lights.size()<MAX_LIGHTS){int s=m.sectorAt(t.x,t.y);if(s<0)continue;SectorMap.Sector S=m.sectors.get(s);
+            else if(t.type==SectorMap.T_HEALTH||t.type==SectorMap.T_SHELLS||SectorMap.isKey(t.type))pickups.add(new Pickup(t.type,t.x,t.y,floorUnder(t.x,t.y,0)));
+            else if(t.type>=SectorMap.T_LAMP_WARM&&t.type<=SectorMap.T_LAMP_WHITE&&lights.size()<MAX_LEVEL_LIGHTS){int s=m.sectorAt(t.x,t.y);if(s<0)continue;SectorMap.Sector S=m.sectors.get(s);
                 float z=Math.min(S.ceil-.3f,S.floor+3.4f);boolean fl=S.special==SectorMap.SP_FLICKER||t.type==SectorMap.T_LAMP_RED;
                 lights.add(new Light(t.x,t.y,z,SectorMap.LAMP_RGB[t.type],t.type==SectorMap.T_LAMP_WHITE?3.6f:3.2f,Math.max(9,Math.min(16,(S.ceil-S.floor)*2.2f)),fl));}}
         glowLights(m);
-        lightMask=new int[W*H];bakeLights();
+        lightBits=new long[W*H];lightMask=new int[W*H];bakeLights();pickLights(spawnX,spawnY,true);
+        for(int s=0;s<m.sectors.size();s++){SectorMap.Sector S=m.sectors.get(s);if(!SectorMap.isDoor(S.special))continue;float[] c=m.centroid(S);
+            doors.add(new Door(s,SectorMap.doorKey(S.special),S.floor,S.ceil,c[0],c[1]));}
+        for(Cell c:cells)if(c.sector>=0)for(int d=0;d<doors.size();d++)if(doors.get(d).sector==c.sector)c.door=d;
+        resetDoors();
     }
+
+    // ------------------------------------------------------------------ doors
+    /** Every door shut (a new level, or she died and it starts over). */
+    void resetDoors(){for(Door d:doors){d.open=0;d.opening=false;setDoor(d);}navVersion++;}
+    private void setDoor(Door d){float e=d.open*d.open*(3-2*d.open);map.sectors.get(d.sector).ceil=d.floor+(d.top-d.floor)*e;
+        boolean shut=!d.passable();int di=doors.indexOf(d);for(Cell c:cells)if(c.door==di&&c.shut!=shut){c.shut=shut;}}
+    /** Opens a door at once (tests, the editor's play-from-here). */
+    void openDoor(Door d){d.opening=true;d.open=1;setDoor(d);navVersion++;}
+    static final float DOOR_REACH=2.4f,DOOR_TIME=1.1f;
+    /** Bits of DOOR_* results from one step: a door started opening, or she is at a door she has no key for. */
+    static final int DOOR_OPENED=1,DOOR_LOCKED=2;int lockedKey=-1;
+    /** Moves the doors; she opens the ones she walks up to (keyed ones only with the key; keys = bit per key). */
+    int updateDoors(float dt,float px,float py,float pz,int keys){
+        int ev=0;lockedKey=-1;
+        for(Door d:doors){
+            if(!d.opening&&Math.hypot(px-d.cx,py-d.cy)<DOOR_REACH+doorRadius(d)&&Math.abs(pz-d.floor)<1.6f){
+                if(d.key<0||(keys&(1<<d.key))!=0){d.opening=true;ev|=DOOR_OPENED;}else{ev|=DOOR_LOCKED;lockedKey=d.key;}}
+            if(d.opening&&d.open<1){boolean was=d.passable();d.open=Math.min(1,d.open+dt/DOOR_TIME);setDoor(d);if(was!=d.passable())navVersion++;}}
+        return ev;
+    }
+    /** About half the door's width (its centroid to its farthest corner). */
+    float doorRadius(Door d){float r=0;for(int id:map.sectors.get(d.sector).loop){SectorMap.Vertex v=map.vertices.get(id);r=Math.max(r,(float)Math.hypot(v.x-d.cx,v.y-d.cy));}return Math.min(r,2.5f);}
+    /** The door slab in world space (its sides and underside), from z0 up to z1: 11-float vertices. */
+    float[] doorSlab(Door d,float z0,float z1){
+        FloatList[] out=new FloatList[Tex.COUNT];SectorMap.Sector S=map.sectors.get(d.sector);int mat=S.ceilTex;out[mat]=new FloatList();
+        int n=S.loop.size();boolean ccw=map.area(S)>0;
+        for(int i=0;i<n;i++){SectorMap.Vertex a=map.vertices.get(S.loop.get(i)),b=map.vertices.get(S.loop.get((i+1)%n));
+            if(ccw)wall(out,mat,b.x,b.y,a.x,a.y,z0,z1);else wall(out,mat,a.x,a.y,b.x,b.y,z0,z1);}   // facing out of the door
+        float[] tri=map.triangulate(d.sector);float t=tile(mat);
+        for(int k=0;k+5<tri.length;k+=6)for(int v=2;v>=0;v--){float x=tri[k+v*2],y=tri[k+v*2+1];out[mat].add(x,y,z0,0,0,-1,-1,0,0,-x*t,y*t);}
+        return out[mat].toArray();
+    }
+
+    // ------------------------------------------------------------------ streamed lights
+    /**
+     * Chooses the lights nearest (x,y) for the 13 slots and rewrites the slot masks if the choice changed. Returns
+     * true if it did (the caller re-uploads the mask). Lights already in a slot keep it, so the textures stay stable.
+     */
+    boolean pickLights(float x,float y,boolean force){
+        if(!force&&!Float.isNaN(pickX)&&Math.hypot(x-pickX,y-pickY)<1.5f)return false;pickX=x;pickY=y;
+        int n=lights.size();if(n<=MAX_LIGHTS&&!force&&slotCount==n)return false;
+        Integer[] order=new Integer[n];for(int i=0;i<n;i++)order[i]=i;
+        java.util.Arrays.sort(order,(a,b)->Float.compare(lightScore(lights.get(a),x,y),lightScore(lights.get(b),x,y)));
+        int want=Math.min(MAX_LIGHTS,n);boolean[] chosen=new boolean[n];for(int i=0;i<want;i++)chosen[order[i]]=true;
+        int[] next=new int[MAX_LIGHTS];java.util.Arrays.fill(next,-1);
+        for(int s=0;s<slotCount;s++)if(chosen[slot[s]]){next[s]=slot[s];chosen[slot[s]]=false;}   // keep its slot
+        for(int i=0;i<n;i++)if(chosen[i])for(int s=0;s<MAX_LIGHTS;s++)if(next[s]<0){next[s]=i;break;}
+        boolean changed=force;for(int s=0;s<MAX_LIGHTS;s++)if(s>=slotCount?next[s]>=0:next[s]!=slot[s])changed=true;
+        if(!changed)return false;
+        slotCount=0;for(int s=0;s<MAX_LIGHTS;s++)if(next[s]>=0)slotCount=s+1;
+        for(int s=0;s<MAX_LIGHTS;s++)slot[s]=next[s];
+        for(int c=0;c<lightMask.length;c++){long b=lightBits[c];int m=0;if(b!=0)for(int s=0;s<slotCount;s++)if(slot[s]>=0&&(b>>>slot[s]&1)!=0)m|=1<<s;lightMask[c]=m;}
+        return true;
+    }
+    /** Distance to the light's reach (nearer and bigger first). */
+    private static float lightScore(Light L,float x,float y){return (float)Math.hypot(L.x-x,L.y-y)-L.radius*.6f;}
+    /** The level light in slot s, or null. */
+    Light slotLight(int s){return s<slotCount&&slot[s]>=0?lights.get(slot[s]):null;}
     /**
      * Glowing surfaces light their surroundings: lava and every glowing floor, ceiling and wall becomes a light in
      * its own colour (flickering for lava and magma). Placed lamps keep their slots; the glows take what is left,
@@ -66,7 +144,8 @@ final class Level {
             for(int q=0;q<n;q++){float t=(q+.5f)/n;cand.add(new float[]{ax+dx*t+nx*.6f,ay+dy*t+ny*.6f,z0+Math.min(1.6f,h*.5f),Tex.glowColor(mat),1.9f*k,6.5f,Tex.flows(mat)?1:0,(l/n)*Math.min(h,3)*k*.8f});}});
         cand.sort((a,b)->Float.compare(b[7],a[7]));
         ArrayList<float[]> placed=new ArrayList<>();
-        for(float[] c:cand){if(lights.size()>=MAX_LIGHTS)break;boolean near=false;for(float[] p:placed)if(Math.hypot(p[0]-c[0],p[1]-c[1])<3&&Math.abs(p[2]-c[2])<2.5f){near=true;break;}
+        int cap=Math.min(MAX_LEVEL_LIGHTS,Math.max(MAX_LIGHTS,lights.size()+Math.max(4,(int)(Math.sqrt(W*H)*CELL/4))));   // more glows on bigger maps
+        for(float[] c:cand){if(lights.size()>=cap)break;boolean near=false;for(float[] p:placed)if(Math.hypot(p[0]-c[0],p[1]-c[1])<3&&Math.abs(p[2]-c[2])<2.5f){near=true;break;}
             if(near||m.sectorAt(c[0],c[1])<0)continue;placed.add(c);lights.add(new Light(c[0],c[1],c[2],(int)c[3],c[4],c[5],c[6]>.5f));}
     }
     float cx(int i){return ox+(i+.5f)*CELL;}
@@ -82,6 +161,11 @@ final class Level {
     /** Vertex: x,y,z, normal, tangent, u,v (11 floats). Returns one float list per material. */
     @SuppressWarnings("unchecked")
     ArrayList<float[]>[] build(){
+        float[] keep=new float[doors.size()];for(int i=0;i<keep.length;i++){Door d=doors.get(i);SectorMap.Sector S=map.sectors.get(d.sector);keep[i]=S.ceil;S.ceil=d.top;}   // doorways are built open; the slabs are drawn on their own
+        try{return buildOpen();}finally{for(int i=0;i<keep.length;i++)map.sectors.get(doors.get(i).sector).ceil=keep[i];}
+    }
+    @SuppressWarnings("unchecked")
+    private ArrayList<float[]>[] buildOpen(){
         FloatList[] out=new FloatList[Tex.COUNT];for(int i=0;i<out.length;i++)out[i]=new FloatList();
         for(int si=0;si<map.sectors.size();si++){SectorMap.Sector s=map.sectors.get(si);float[] tri=map.triangulate(si);
             float tf=tile(s.floorTex),tc=tile(s.ceilTex);
@@ -129,13 +213,13 @@ final class Level {
     private void bakeLights(){
         ArrayList<float[]> walls=new ArrayList<>();
         for(SectorMap.Line L:map.lines)if(blocksLight(L)){SectorMap.Vertex a=map.vertices.get(L.a),b=map.vertices.get(L.b);walls.add(new float[]{a.x,a.y,b.x,b.y});}
-        for(int li=0;li<lights.size()&&li<MAX_LIGHTS;li++){Light L=lights.get(li);
+        for(int li=0;li<lights.size()&&li<MAX_LEVEL_LIGHTS;li++){Light L=lights.get(li);
             int i0=Math.max(0,ix(L.x-L.radius-1)),i1=Math.min(W-1,ix(L.x+L.radius+1)),j0=Math.max(0,iy(L.y-L.radius-1)),j1=Math.min(H-1,iy(L.y+L.radius+1));
             ArrayList<float[]> near=new ArrayList<>();for(float[] w:walls)if(SectorMap.segDist(L.x,L.y,w[0],w[1],w[2],w[3])<L.radius+1)near.add(w);
             for(int j=j0;j<=j1;j++)for(int i=i0;i<=i1;i++){Cell c=at(i,j);if(c.solid&&!edgeCell(i,j))continue;
                 float x=cx(i),y=cy(j);if(Math.hypot(x-L.x,y-L.y)>L.radius+1)continue;
                 float q=CELL*.45f;float[][] pts={{x,y},{x-q,y-q},{x+q,y-q},{x-q,y+q},{x+q,y+q}};
-                for(float[] p:pts)if(sees(near,L.x,L.y,p[0],p[1])){lightMask[j*W+i]|=1<<li;break;}}}
+                for(float[] p:pts)if(sees(near,L.x,L.y,p[0],p[1])){lightBits[j*W+i]|=1L<<li;break;}}}
     }
     /** Solid cells right next to open ones still need masks (their walls are lit from the open side). */
     private boolean edgeCell(int i,int j){return !at(i+1,j).solid||!at(i-1,j).solid||!at(i,j+1).solid||!at(i,j-1).solid;}

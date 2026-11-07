@@ -102,8 +102,8 @@ public class SectorTest {
             while(more){more=false;nav.target(L.spawnX,L.spawnY);
                 if(keys==0&&keyedDoors>0)keyedOnPath=!exitReachable(m,nav);
                 for(Level.Pickup p:L.pickups)if(SectorMap.isKey(p.type)&&nav.distAt(p.x,p.y)<Nav.INF)keys|=1<<(p.type-SectorMap.T_KEY_RED);
-                for(Level.Door d:L.doors)if(!d.passable()&&(keys&(1<<d.key))!=0){L.openDoor(d);more=true;}}
-            for(Level.Door d:L.doors)assertTrue(m.name+": every door opens",d.passable());
+                for(Level.Door d:L.doors)if(!L.passable(d)&&(keys&(1<<d.key))!=0){L.openDoor(d);more=true;}}
+            for(Level.Door d:L.doors)assertTrue(m.name+": every door opens",L.passable(d));
             if(i>0){assertTrue(m.name+" has key doors",keyedDoors>=1);assertTrue(m.name+": a key is needed to reach the exit",keyedOnPath);}
             for(float[] d:L.demonSpawns)assertTrue(m.name+": demon at "+d[0]+","+d[1]+" can reach her",nav.distAt(d[0],d[1])<Nav.INF);
             for(Level.Pickup p:L.pickups)assertTrue(m.name+": pickup at "+p.x+","+p.y+" reachable",nav.distAt(p.x,p.y)<Nav.INF);
@@ -122,13 +122,33 @@ public class SectorTest {
         b.start(4,2,(float)Math.PI/2);SectorMap m=b.done();Level L=new Level(m);
         assertEquals(1,L.doors.size());Level.Door door=L.doors.get(0);
         assertTrue("shut doors block",L.blocked(4,8.5f,0,.3f,1.8f));
-        Nav nav=new Nav(L);nav.target(4,2);assertTrue(nav.distAt(4,13)>=Nav.INF);
-        assertEquals(Level.DOOR_LOCKED,L.updateDoors(.1f,4,7.2f,0,0)&Level.DOOR_LOCKED);assertEquals(0,L.lockedKey);
-        L.updateDoors(.1f,4,7.2f,0,1);for(int k=0;k<20;k++)L.updateDoors(.1f,4,7.2f,0,1);
-        assertTrue(door.passable());assertFalse("open doors don't",L.blocked(4,8.5f,0,.3f,1.8f));
+        assertEquals(Level.D_CLOSED,door.state);assertEquals("a shut door's ceiling rests on its floor",0,L.doorSector(door).ceil,1e-5f);
+        Nav nav=new Nav(L);nav.target(4,2);assertTrue("keyed doors are shut to demons",nav.distAt(4,13)>=Nav.INF);
+        assertEquals(Level.DOOR_LOCKED,L.updateDoors(.1f,4,7.2f,0,0,null)&Level.DOOR_LOCKED);assertEquals(0,L.lockedKey);assertEquals(Level.D_CLOSED,door.state);
+        assertEquals(Level.DOOR_OPENED,L.updateDoors(.1f,4,7.2f,0,1,null)&Level.DOOR_OPENED);
+        for(int k=0;k<20;k++)L.updateDoors(.1f,4,7.2f,0,1,null);
+        assertEquals(Level.D_OPEN,door.state);assertTrue(L.passable(door));assertFalse("open doors don't",L.blocked(4,8.5f,0,.3f,1.8f));
         nav.target(4,2);assertTrue(nav.distAt(4,13)<Nav.INF);
-        float[] geo=L.doorSlab(door,0,3);assertTrue(geo.length>0);
-        L.resetDoors();assertFalse(door.passable());
+        // she walks on: it waits, then comes down; standing under it sends it back up
+        int ev=0;for(int k=0;k<60;k++)ev|=L.updateDoors(.1f,4,13,0,1,null);assertTrue((ev&Level.DOOR_CLOSING)!=0);
+        for(int k=0;k<4;k++)L.updateDoors(.1f,4,13,0,1,null);assertTrue(L.doorSector(door).ceil<3);
+        L.updateDoors(.1f,4,8.5f,0,1,null);assertEquals("it goes back up over her",Level.D_OPENING,door.state);
+        // demons open plain doors only
+        Level.FloatList[] g=new Level.FloatList[Tex.COUNT];L.doorGeometry(g);boolean any=false;for(Level.FloatList f:g)any|=f!=null&&f.n>0;assertTrue("the door has moving walls",any);
+        L.resetDoors();assertFalse(L.passable(door));
+        java.util.List<float[]> demon=java.util.Collections.singletonList(new float[]{4,9.8f,0});
+        L.updateDoors(.1f,4,2,0,0,demon);assertEquals("demons can't open keyed doors",Level.D_CLOSED,door.state);
+    }
+    @Test public void aDoorDrawnShutOpensToItsNeighboursAndDemonsOpenIt(){
+        Maps.B b=new Maps.B("shut door");
+        b.rect(0,0,8,8,0,4,Tex.FLOOR_TILES,Tex.CONCRETE,Tex.BRICK);
+        SectorMap.Sector s=b.rect(3,8,5,9,0,0,Tex.FLOOR_TILES,Tex.METAL_PANEL,Tex.METAL_PANEL);s.special=SectorMap.SP_DOOR;   // as in RPG Pocket Editor: floor = ceiling
+        b.rect(0,9,8,17,0,4.5f,Tex.FLOOR_TILES,Tex.CONCRETE,Tex.BRICK);
+        b.start(4,2,(float)Math.PI/2);Level L=new Level(b.done());Level.Door d=L.doors.get(0);
+        assertEquals("opens to the lower neighbour ceiling",3.9f,d.top,1e-4f);
+        Nav nav=new Nav(L);nav.target(4,2);assertTrue("demons path through plain doors",nav.distAt(4,13)<Nav.INF);
+        java.util.List<float[]> demon=java.util.Collections.singletonList(new float[]{4,9.8f,0});
+        for(int k=0;k<20;k++)L.updateDoors(.1f,4,2,0,0,demon);assertTrue("a demon opened it",L.passable(d));
     }
     @Test public void mapStoreSavesAndLists()throws Exception{
         java.io.File dir=java.nio.file.Files.createTempDirectory("maps").toFile();MapStore st=new MapStore(dir);

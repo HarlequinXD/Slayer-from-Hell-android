@@ -279,8 +279,11 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
             playCampaign(1);for(int i=0;i<150;i++)frame(1/60f);shot(dir+"/2c-story.png");
             story.advance();for(int i=0;i<5;i++)frame(1/60f);shot(dir+"/2d-story-read.png");story.finish();for(int i=0;i<3;i++)frame(1/60f);
             for(int i=0;i<600;i++){frame(1/60f);if(game!=null&&game.loading==null&&i>200)break;}
-            game.debugPlace(0,61.8f,(float)Math.PI/2);for(int i=0;i<60;i++)frame(1/60f);shot(dir+"/6b-red-door.png");
-            playCampaign(0);story.finish();for(int i=0;i<3;i++)frame(1/60f);dev.key(Devices.K_W,true);for(int i=0;i<600;i++){frame(1/60f);if(game!=null&&game.loading==null&&i>200)break;}
+            game.debugPlace(0,63.1f,(float)Math.PI/2);for(int i=0;i<60;i++)frame(1/60f);shot(dir+"/6b-red-door.png");
+            playCampaign(0);story.finish();for(int i=0;i<3;i++)frame(1/60f);
+            for(int i=0;i<600;i++){frame(1/60f);if(game!=null&&game.loading==null&&i>200)break;}
+            game.debugPlace(4,37.6f,(float)Math.PI/2);for(int i=0;i<20;i++)frame(1/60f);shot(dir+"/6c-door-shut.png");game.debugPlace(4,38.9f,(float)Math.PI/2);for(int i=0;i<36;i++)frame(1/60f);shot(dir+"/6d-door-opening.png");
+            game.debugPlace(4,1.5f,(float)Math.PI/2);dev.key(Devices.K_W,true);for(int i=0;i<600;i++){frame(1/60f);if(game!=null&&game.loading==null&&i>200)break;}
             for(int i=0;i<90;i++)frame(1/60f);dev.key(Devices.K_W,false);shot(dir+"/6-game.png");
             pauseGame();for(int i=0;i<10;i++)frame(1/60f);shot(dir+"/7-paused.png");
             levelComplete(12,13,312);for(int i=0;i<10;i++)frame(1/60f);shot(dir+"/8-complete.png");

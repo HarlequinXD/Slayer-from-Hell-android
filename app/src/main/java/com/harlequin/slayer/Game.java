@@ -28,7 +28,8 @@ final class Game implements GLSurfaceView.Renderer {
     volatile boolean inCombat;private float combatHold;
     /** Told when combat starts or stops (on the GL thread). */
     java.util.function.Consumer<Boolean> onCombat;
-    private Gfx.Mesh[] doorMesh=new Gfx.Mesh[0];private Gfx.Mesh keyMesh;
+    private Gfx.Stream doorStream;private final Level.FloatList[] doorGeo=new Level.FloatList[Tex.COUNT];private Gfx.Mesh keyMesh;
+    private final ArrayList<float[]> demonSpots=new ArrayList<>();
 
     Game(Context c,SectorMap m){ctx=c;map=m;level=new Level(m);pl.spawn(level);hero.bodyYaw=pl.yaw;enemies=new Enemies(level,pl);demonsTotal=enemies.demons.size();}
 
@@ -58,7 +59,7 @@ final class Game implements GLSurfaceView.Renderer {
         float[][] g=Gun.build();parts=new Gfx.Mesh[g.length];for(int i=0;i<g.length;i++)parts[i]=g[i]==null?null:new Gfx.Mesh(g[i]);
         loadBakedGun();loadHero();loadSaw();loadDemon();
         maskTex=Gfx.maskTexture(level.lightMask,level.W,level.H);
-        buildDoors();keyMesh=new Gfx.Mesh(box(-.17f,-.025f,-.11f,.17f,.025f,.11f));
+        doorStream=new Gfx.Stream(3,3,3,2);keyMesh=new Gfx.Mesh(box(-.17f,-.025f,-.11f,.17f,.025f,.11f));
         decalStream=new Gfx.Stream(3,2,1);partStream=new Gfx.Stream(3,2,4);bloodStream=new Gfx.Stream(3,2,4,1);
         for(int i=0;i<Tex.COUNT;i++)tex[i]=null;firstReady=false;
         GLES30.glEnable(GLES30.GL_DEPTH_TEST);GLES30.glDepthFunc(GLES30.GL_LEQUAL);GLES30.glDisable(GLES30.GL_CULL_FACE);
@@ -202,6 +203,9 @@ final class Game implements GLSurfaceView.Renderer {
     private void needMaterials(java.util.ArrayList<float[]>[] geo,boolean trim){
         for(int i=0;i<Tex.COUNT;i++)need[i]=geo[i].get(0).length>0;
         need[Tex.SHELL]=need[Tex.BRASS]=true;
+        for(Level.Door d:level.doors){SectorMap.Sector S=level.map.sectors.get(d.sector);need[S.ceilTex]=need[S.wallTex]=true;}   // the moving parts aren't in the static geometry
+        for(java.util.Map.Entry<Long,Integer> e:level.map.wallTex.entrySet()){int a=(int)(e.getKey()>>32),b=(int)(long)e.getKey();
+            for(Level.Door d:level.doors)if(level.map.sectors.get(d.sector).loop.contains(a)&&level.map.sectors.get(d.sector).loop.contains(b))need[e.getValue()]=true;}
         if(trim)Materials.keepOnly(need);
         for(int i=0;i<Tex.COUNT;i++)if(need[i])Materials.request(i);
     }
@@ -319,7 +323,6 @@ final class Game implements GLSurfaceView.Renderer {
         needMaterials(geo,false);
         GLES30.glDeleteTextures(1,new int[]{maskTex},0);maskTex=Gfx.maskTexture(level.lightMask,level.W,level.H);
         if(editMode)for(Level.Door d:level.doors)level.openDoor(d);   // the editor walks through doorways
-        buildDoors();
         enemies=new Enemies(level,pl);
     }
     private void editUpdate(float dt){
@@ -636,11 +639,6 @@ final class Game implements GLSurfaceView.Renderer {
     }
 
     // ------------------------------------------------------------------ doors and keys
-    private void buildDoors(){
-        for(Gfx.Mesh m:doorMesh)if(m!=null)m.release();
-        doorMesh=new Gfx.Mesh[level.doors.size()];
-        for(int i=0;i<doorMesh.length;i++){Level.Door d=level.doors.get(i);doorMesh[i]=new Gfx.Mesh(level.doorSlab(d,0,d.top-d.floor));}
-    }
     /** A box (11-float vertices, outward normals) for small props: the keys. */
     static float[] box(float x0,float y0,float z0,float x1,float y1,float z1){
         Level.FloatList o=new Level.FloatList();
@@ -658,20 +656,19 @@ final class Game implements GLSurfaceView.Renderer {
     }
     private void doors(float dt){
         lockedCool=Math.max(0,lockedCool-dt);
-        int ev=level.updateDoors(dt,pl.x,pl.y,pl.z,keys);
-        if((ev&Level.DOOR_OPENED)!=0){sfx.play(Sfx.LAND,.9f,.55f);sfx.play(Sfx.CHARGE,.5f,.6f);}
+        demonSpots.clear();for(Demon d:enemies.demons)if(!d.dead)demonSpots.add(new float[]{d.body.x,d.body.y,d.body.z});
+        int ev=level.updateDoors(dt,pl.x,pl.y,pl.z,keys,demonSpots);
+        float v=vol(level.eventX,level.eventY,level.eventZ);
+        if((ev&Level.DOOR_OPENED)!=0){sfx.play(Sfx.LAND,.9f*v,.5f);sfx.play(Sfx.CHARGE,.45f*v,.55f);}
+        if((ev&Level.DOOR_CLOSING)!=0){sfx.play(Sfx.CHARGE,.4f*v,.45f);}
         if((ev&Level.DOOR_LOCKED)!=0&&lockedCool<=0&&level.lockedKey>=0){banner="YOU NEED THE "+SectorMap.KEY_NAMES[level.lockedKey]+" KEY";bannerT=2f;lockedCool=2.5f;sfx.play(Sfx.HIT,.6f,.5f);}
-        // locked doors shed sparks of their key's colour along the bottom edge
-        for(Level.Door d:level.doors){if(d.key<0||d.open>.01f||fx.rng.nextFloat()>.35f)continue;int c=SectorMap.KEY_RGB[d.key];
-            float r=level.doorRadius(d)*.8f,a=fx.rng.nextFloat()*6.283f;
-            fx.spawn(Fx.ADD,d.cx+(float)Math.cos(a)*r*fx.rng.nextFloat(),d.cy+(float)Math.sin(a)*r*fx.rng.nextFloat(),d.floor+fx.rnd(.05f,2.2f),0,0,fx.rnd(.05f,.2f),fx.rnd(.4f,.8f),fx.rnd(.03f,.06f),0,0,.5f,((c>>16)&255)/255f,((c>>8)&255)/255f,(c&255)/255f,1);}
     }
     private void drawDoors(){
-        for(int i=0;i<doorMesh.length&&i<level.doors.size();i++){Level.Door d=level.doors.get(i);if(doorMesh[i]==null||doorMesh[i].count==0||d.open>=1)continue;
-            SectorMap.Sector S=level.map.sectors.get(d.sector);if(tex[S.ceilTex]==null)continue;
-            model(M.tr(0,0,S.ceil-d.floor));bindMat(S.ceilTex,false);
-            if(d.key>=0){int c=SectorMap.KEY_RGB[d.key];float k=.22f+.12f*(float)Math.sin(time*3+i);GLES30.glUniform4f(u(prog,"uGlow"),((c>>16)&255)/255f,((c>>8)&255)/255f,(c&255)/255f,k);}
-            doorMesh[i].draw();GLES30.glUniform4f(u(prog,"uGlow"),0,0,0,0);}
+        // the doors as they are this frame: each door's ceiling and the walls above it
+        for(Level.FloatList f:doorGeo)if(f!=null)f.clear();
+        level.doorGeometry(doorGeo);
+        model(M.id());
+        for(int m=0;m<Tex.COUNT;m++){Level.FloatList f=doorGeo[m];if(f==null||f.n==0||tex[m]==null)continue;bindMat(m,true);doorStream.draw(f.a,f.n);}
         // keys: a spinning, glowing card above the floor
         if(keyMesh!=null&&tex[Tex.SHELL]!=null)for(Level.Pickup p:level.pickups){if(p.taken||!SectorMap.isKey(p.type))continue;int c=SectorMap.KEY_RGB[p.type-SectorMap.T_KEY_RED];
             float bob=.75f+.1f*(float)Math.sin(time*2.2f+p.x);

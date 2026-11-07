@@ -51,9 +51,18 @@ final class Maps {
         /** A raised block (a console, a crate) of `h` metres in its room. */
         void block(float x0,float y0,float x1,float y1,float h,int top,int side){SectorMap.Sector s=rect(x0,y0,x1,y1,h,0,top,top,side);int host=m.parent[m.sectors.indexOf(s)];
             s.ceil=host>=0?m.sectors.get(host).ceil:4;s.floor=(host>=0?m.sectors.get(host).floor:0)+h;m.index();}
-        /** A door across a passage: it rises into its lintel (top) when opened; key -1 (none), 0 red, 1 blue, 2 yellow. */
+        /**
+         * A door across a passage: a sector with the Door special, its ceiling drawn at the height it opens to. Its
+         * wall texture is the door's face (the walls above it rise with it); the jambs either side are painted with
+         * the frame, or for a keyed door with a material in the key's colour so it reads from across the room.
+         * key: -1 none, 0 red, 1 blue, 2 yellow (the sector's tag is key + 1).
+         */
         SectorMap.Sector door(float x0,float y0,float x1,float y1,float floor,float top,int key,int slab,int frame){
-            SectorMap.Sector s=rect(x0,y0,x1,y1,floor,top,frame,slab,frame);s.special=key<0?SectorMap.SP_DOOR:SectorMap.SP_DOOR_RED+key;m.index();return s;}
+            SectorMap.Sector s=rect(x0,y0,x1,y1,floor,top,frame,slab,slab);s.special=SectorMap.SP_DOOR;s.tag=key+1;m.index();
+            int si=m.sectors.indexOf(s),jamb=key<0?frame:keyFrame(key,Tex.category(frame)==Tex.CAT_SCIFI);
+            for(SectorMap.Line L:m.lines){if(L.front==si&&L.back<0)m.wallTex.put(SectorMap.wallKey(L.a,L.b),jamb);else if(L.back==si&&L.front<0)m.wallTex.put(SectorMap.wallKey(L.b,L.a),jamb);}
+            return s;}
+        static int keyFrame(int key,boolean tech){String[] t={"Red alert lights","Blue logic board","Amber running lights"},h={"Blood runes","Soul runes","Gilded sigils"};return L((tech?t:h)[key]);}
         /** A key lying on the floor (0 red, 1 blue, 2 yellow). */
         void key(int k,float x,float y){thing(SectorMap.T_KEY_RED+k,x,y,0);}
         void thing(int type,float x,float y,float angle){m.things.add(new SectorMap.Thing(type,x,y,angle));}

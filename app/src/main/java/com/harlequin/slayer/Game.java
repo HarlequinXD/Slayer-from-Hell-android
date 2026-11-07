@@ -203,6 +203,9 @@ final class Game implements GLSurfaceView.Renderer {
     private void needMaterials(java.util.ArrayList<float[]>[] geo,boolean trim){
         for(int i=0;i<Tex.COUNT;i++)need[i]=geo[i].get(0).length>0;
         need[Tex.SHELL]=need[Tex.BRASS]=true;
+        for(Level.Door d:level.doors){SectorMap.Sector S=level.map.sectors.get(d.sector);need[S.ceilTex]=need[S.wallTex]=true;}   // the moving parts aren't in the static geometry
+        for(java.util.Map.Entry<Long,Integer> e:level.map.wallTex.entrySet()){int a=(int)(e.getKey()>>32),b=(int)(long)e.getKey();
+            for(Level.Door d:level.doors)if(level.map.sectors.get(d.sector).loop.contains(a)&&level.map.sectors.get(d.sector).loop.contains(b))need[e.getValue()]=true;}
         if(trim)Materials.keepOnly(need);
         for(int i=0;i<Tex.COUNT;i++)if(need[i])Materials.request(i);
     }

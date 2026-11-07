@@ -1,6 +1,5 @@
 package com.harlequin.slayer;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Canvas;
@@ -20,7 +19,7 @@ import java.util.Random;
  * The menus: the title screen (Campaign, Custom levels, Level editor, Settings, Quit) over an animated hellscape,
  * and the in-game overlays (pause, level complete). Drawn on a canvas with the editor's theme helpers.
  */
-final class MenuView extends View {
+final class MenuView extends View implements Pointer.Aware {
     interface Host {
         void playCampaign(int index);void playCustom(String id);void editMap(String id,SectorMap from);void quit();
         void resume();void restart();void leaveGame();void nextLevel();
@@ -30,7 +29,7 @@ final class MenuView extends View {
     /** What to play once a skill is chosen: a campaign map, or a custom level's id. */
     private int pendingCampaign=-1;private String pendingCustom;private int skillFrom=MAIN;
 
-    private final Ui ui;private final Paint p,glow=new Paint(Paint.ANTI_ALIAS_FLAG);private final Path path=new Path();private final RectF r=new RectF();
+    private final Ui ui;private final Paint p,glow=new Paint(Paint.ANTI_ALIAS_FLAG);private final Path path=new Path();private final RectF r=new RectF(),hv=new RectF();
     private final Host host;private final MapStore store;private final SharedPreferences prefs;
     int page=MAIN;
     /** Overlay details: whether the game came from the editor, completion stats, whether there is a next map. */
@@ -104,8 +103,11 @@ final class MenuView extends View {
         ui.text(c,sub,dp(82),dp(70),12.5f,0xb0e0c0a0,0,-1);
     }
     /** A big menu entry: dark glass panel, accent bar, icon, label and a line of detail. */
+    @Override public Ui pointerUi(){return ui;}
+    @Override public void pointerPan(float dx,float dy){if(page==CUSTOM){scroll+=dy;invalidate();}}
+    @Override public void pointerZoom(float steps,float x,float y){if(page==CUSTOM){scroll-=steps*dp(72);invalidate();}}
     private void entry(Canvas c,float l,float t,float rr,float b,int icon,String label,String sub,int id,boolean primary){
-        boolean down=pressed==id;
+        boolean down=pressed==id;hv.set(l,t,rr,b);primary|=Ui.hovered(hv);
         ui.round(c,l,t,rr,b,dp(10),down?0xe03a120a:primary?0xd0281008:0xb0140808);
         ui.outline(c,l,t,rr,b,dp(10),down||primary?0xa0ff6a2a:0x40ffffff,dp(1));
         ui.rect(c,l+dp(1),t+dp(10),l+dp(4),b-dp(10),primary?0xffff5a1a:0x80ff6a2a);
@@ -207,8 +209,7 @@ final class MenuView extends View {
             if(id>=H_PLAYC&&id<H_PLAYC+customs.size()){pendingCustom=customs.get(id-H_PLAYC).id;pendingCampaign=-1;skillFrom=CUSTOM;show(SKILL);return;}
             if(id>=H_EDITC&&id<H_EDITC+customs.size()){host.editMap(customs.get(id-H_EDITC).id,null);return;}
             if(id>=H_DEL&&id<H_DEL+customs.size()){MapStore.Entry en=customs.get(id-H_DEL);
-                new AlertDialog.Builder(getContext(),android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Delete \""+en.name+"\"?").setMessage("This can't be undone.")
-                    .setPositiveButton("Delete",(d,i)->{store.delete(en.id);show(CUSTOM);}).setNegativeButton("Cancel",null).show();return;}}
+                Overlay.get().confirm("Delete \""+en.name+"\"?","This can't be undone.","Delete",true,()->{store.delete(en.id);show(CUSTOM);});return;}}
         if(page==SETTINGS){
             if(id==H_SET+10||id==H_SET+11){Game.lookSens=Math.max(.002f,Math.min(.012f,Game.lookSens+(id==H_SET+11?.0005f:-.0005f)));}
             else if(id==H_SET+1)Game.invertLook=!Game.invertLook;
@@ -223,8 +224,8 @@ final class MenuView extends View {
     }
     private void newLevel(){
         String[] items={"Blank level (one room)","Start from Hell's Gate","Start from The Molten Keep"};
-        new AlertDialog.Builder(getContext(),android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("New level").setItems(items,(d,i)->{
-            SectorMap m=i==0?Maps.blank():Maps.campaign(i-1);m.name=i==0?"New level":m.name+" (copy)";host.editMap(null,m);}).setNegativeButton("Cancel",null).show();
+        Overlay.get().choose("New level",items,-1,i->{
+            SectorMap m=i==0?Maps.blank():Maps.campaign(i-1);m.name=i==0?"New level":m.name+" (copy)";host.editMap(null,m);});
     }
     /** Back key. Returns false when the app should close. */
     boolean back(){if(page==PAUSE){host.resume();return true;}if(page==COMPLETE){host.leaveGame();return true;}if(page==SKILL){show(skillFrom);return true;}if(page!=MAIN){show(MAIN);return true;}return false;}

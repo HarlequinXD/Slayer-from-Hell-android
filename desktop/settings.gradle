@@ -1,0 +1,2 @@
+// The desktop (Windows / Linux) build: a separate Gradle build so it needs no Android SDK.
+rootProject.name = 'SlayerFromHell'

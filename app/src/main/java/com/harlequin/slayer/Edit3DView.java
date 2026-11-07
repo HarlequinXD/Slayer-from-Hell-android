@@ -18,7 +18,7 @@ import android.view.View;
  * collision and steps), Up/Down while flying, Raise/Lower for a selected floor or ceiling, back to the player start,
  * and Play here.
  */
-final class Edit3DView extends View {
+final class Edit3DView extends View implements Pointer.Aware {
     interface Host {void back3D();void playHere(SectorMap m);void changed3D();}
     private static final int H_BACK=1,H_FLY=2,H_START=3,H_PLAY=4,H_UP=5,H_DOWN=6,H_RAISE=7,H_LOWER=8,H_RESET=9,H_UNDO=10,H_REDO=11,H_MAT=100;
     private final Ui ui;private final Paint p,pixel=new Paint();private final Path path=new Path();private final RectF r=new RectF();
@@ -145,6 +145,18 @@ final class Edit3DView extends View {
     }
 
     // ---------------------------------------------------------------- touch
+    // ---------------------------------------------------------------- the global cursor: controller and keyboard fly the camera
+    @Override public Ui pointerUi(){return ui;}
+    @Override public boolean pointerCamera(){return true;}
+    private boolean padDriving;
+    /** Move (strafe, forward), look (rates, -1..1) and up/down from a controller or WASD/QE. */
+    void padCamera(float mx,float my,float lx,float ly,float upDown,float dt){
+        boolean any=mx!=0||my!=0||upDown!=0;
+        if(any||padDriving){game.editMoveX=mx;game.editMoveY=my;game.editUp=upDown>.3f;game.editDown=upDown<-.3f;padDriving=any;}
+        if(lx!=0||ly!=0)game.editLook(lx*dt*420,ly*dt*300);
+    }
+    /** Mouse look while the right (or middle) button is held. */
+    void mouseLook(float dx,float dy){game.editLook(dx*.6f,dy*.6f);}
     @Override public boolean onTouchEvent(MotionEvent e){
         int a=e.getActionMasked(),idx=e.getActionIndex(),id=e.getPointerId(idx);float x=e.getX(idx),y=e.getY(idx);float w=getWidth(),left=browserW();
         if(a==MotionEvent.ACTION_DOWN||a==MotionEvent.ACTION_POINTER_DOWN){

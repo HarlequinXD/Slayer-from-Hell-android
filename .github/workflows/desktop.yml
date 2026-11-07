@@ -1,0 +1,62 @@
+name: Build Slayer from Hell for Windows
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  # Runs the desktop build for real (software OpenGL in a virtual display) and screenshots the menus, editor and game.
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build
+        run: gradle -p desktop installDist --stacktrace
+      - name: Run and screenshot (Xvfb + Mesa)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0
+          export LIBGL_ALWAYS_SOFTWARE=1
+          timeout 600 xvfb-run -a -s "-screen 0 1600x900x24" desktop/build/install/SlayerFromHell/bin/SlayerFromHell --shots shots
+          ls -la shots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-screenshots
+          path: shots/*.png
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build
+        run: gradle -p desktop installDist --stacktrace
+      - name: Package (bundled Java runtime, SlayerFromHell.exe)
+        shell: pwsh
+        run: |
+          jpackage --type app-image --name SlayerFromHell --app-version 0.3.0 --vendor HarlequinXD `
+            --description "Slayer from Hell" --icon desktop/icon.ico `
+            --input desktop/build/install/SlayerFromHell/lib --main-jar SlayerFromHell.jar `
+            --main-class com.harlequin.slayer.DesktopMain --java-options "-Xmx1g" --dest dist
+          Compress-Archive -Path dist/SlayerFromHell -DestinationPath SlayerFromHell-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SlayerFromHell-windows
+          path: SlayerFromHell-windows.zip
+          if-no-files-found: error

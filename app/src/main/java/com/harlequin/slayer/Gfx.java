@@ -70,6 +70,7 @@ final class Gfx {
             GLES30.glBindVertexArray(0);
         }
         void draw(){if(count==0)return;GLES30.glBindVertexArray(vao);GLES30.glDrawArrays(GLES30.GL_TRIANGLES,0,count);}
+        void release(){if(count==0)return;GLES30.glDeleteBuffers(1,new int[]{vbo},0);GLES30.glDeleteVertexArrays(1,new int[]{vao},0);count=0;}
     }
 
     /** A dynamic vertex stream (particles, decals) with a given attribute layout. */

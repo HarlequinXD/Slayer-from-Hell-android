@@ -10,10 +10,11 @@ import java.util.ArrayList;
 /** Shared dark editor theme, density-aware sizing and drawing primitives (from RPG Pocket Editor). */
 final class Ui {
     // Palette
-    static final int BG=0xff15181c, CANVAS=0xff1a1e23, SURFACE=0xff20252b, SURFACE_2=0xff282e36, SURFACE_3=0xff323a44,
-            BORDER=0xff343b45, DIVIDER=0xff2a3038, TEXT=0xffe8ecf1, TEXT_2=0xffa6b0bd, TEXT_3=0xff6e7987,
-            ACCENT=0xff3d8bfd, ACCENT_DARK=0xff2f6fd0, ACCENT_SOFT=0x333d8bfd, ORANGE=0xfff0a030, GREEN=0xff3ecf8e,
-            RED=0xffef5b5b, AMBER=0xfff2b84b;
+    // Hellfire palette (matches the main menu): charred near-black, dried-blood surfaces, ember accents
+    static final int BG=0xff0e0807, CANVAS=0xff140b09, SURFACE=0xff1c0f0c, SURFACE_2=0xff2a1510, SURFACE_3=0xff381c15,
+            BORDER=0xff4a2219, DIVIDER=0xff2e1712, TEXT=0xfff6e9df, TEXT_2=0xffc9a898, TEXT_3=0xff8c6b5c,
+            ACCENT=0xffff5a1a, ACCENT_DARK=0xffc23d0c, ACCENT_SOFT=0x40ff5a1a, ORANGE=0xffffb347, GREEN=0xff6fdc8c,
+            RED=0xffff4a3a, AMBER=0xfff2b84b, EMBER_TEXT=0xffffb080;
     static final int NORMAL=0, ACTIVE=1, PRIMARY=2, DANGER=3, GHOST=4, DISABLED=5, SUCCESS=6;
 
     final float dp;
@@ -80,17 +81,17 @@ final class Ui {
         float rad=dp(6);
         int bg,fg;
         switch(style){
-            case ACTIVE: bg=ACCENT_SOFT;fg=0xff8fbcff;break;
+            case ACTIVE: bg=ACCENT_SOFT;fg=EMBER_TEXT;break;
             case PRIMARY: bg=ACCENT;fg=0xffffffff;break;
-            case DANGER: bg=SURFACE_2;fg=0xffff8a8a;break;
+            case DANGER: bg=SURFACE_2;fg=0xffff7a6a;break;
             case GHOST: bg=0x00000000;fg=TEXT_2;break;
-            case DISABLED: bg=0x80282e36;fg=0xff58626f;break;
-            case SUCCESS: bg=0xff2e9e6c;fg=0xffffffff;break;
+            case DISABLED: bg=0x802a1510;fg=0xff6a4c40;break;
+            case SUCCESS: bg=0xff2e8a4c;fg=0xffffffff;break;
             default: bg=SURFACE_2;fg=TEXT;
         }
         if(bg!=0)round(c,r,rad,bg);
-        if(style==ACTIVE)outline(c,r,rad,0x993d8bfd,dp(1));
-        else if(style==NORMAL||style==DANGER||style==DISABLED)outline(c,r,rad,0x14ffffff,dp(1));
+        if(style==ACTIVE)outline(c,r,rad,0xb0ff6a2a,dp(1));
+        else if(style==NORMAL||style==DANGER||style==DISABLED)outline(c,r,rad,0x26ff8a5a,dp(1));
         float iconSize=Math.min(18,r.height()/dp-14);
         if(label==null||label.isEmpty()){if(icon>=0)icon(c,icon,r.centerX(),r.centerY(),iconSize,fg);return;}
         float textSize=r.height()<dp(30)?11.5f:12.5f;
@@ -105,14 +106,25 @@ final class Ui {
     /** Centred icon-over-label button (used for big touch controls). */
     void stackButton(Canvas c,RectF r,int icon,String label,int style){
         int bg=style==PRIMARY?ACCENT:style==ACTIVE?ACCENT_SOFT:SURFACE_2,fg=style==PRIMARY?0xffffffff:TEXT;
-        round(c,r,dp(8),bg);outline(c,r,dp(8),0x18ffffff,dp(1));
+        round(c,r,dp(8),bg);outline(c,r,dp(8),0x30ff8a5a,dp(1));
         icon(c,icon,r.centerX(),r.centerY()-dp(7),20,fg);
         text(c,label,r.centerX(),r.centerY()+dp(16),10.5f,fg,1,0);
     }
     /** Rounded pill with a soft shadow, used for floating hints and HUD chips. */
     void pill(Canvas c,float l,float t,float r,float b,int color){
         round(c,l,t+dp(2),r,b+dp(2),(b-t)*.5f,0x55000000);
-        round(c,l,t,r,b,(b-t)*.5f,color);outline(c,l,t,r,b,(b-t)*.5f,0x1fffffff,dp(1));
+        round(c,l,t,r,b,(b-t)*.5f,color);outline(c,l,t,r,b,(b-t)*.5f,0x50ff6a2a,dp(1));
+    }
+    /** A panel shaded like the menu: dried blood fading to char, with an ember hairline at the top. */
+    void hellPanel(Canvas c,float l,float t,float r,float b){
+        p.setShader(new android.graphics.LinearGradient(0,t,0,b,0xff24120d,0xff120908,android.graphics.Shader.TileMode.CLAMP));p.setStyle(Paint.Style.FILL);c.drawRect(l,t,r,b,p);p.setShader(null);
+        rect(c,l,t,r,t+Math.max(1,dp(1)),0x55ff5a1a);
+    }
+    /** Title text with a fire glow (the menu's lettering). */
+    void glowText(Canvas c,String s,float x,float y,float sizeDp,int color,int align){
+        p.setShader(null);p.setStyle(Paint.Style.FILL);p.setTextSize(dp(sizeDp));p.setTypeface(bold);
+        p.setTextAlign(align<0?Paint.Align.LEFT:align==0?Paint.Align.CENTER:Paint.Align.RIGHT);
+        p.setShadowLayer(dp(8),0,0,0xffc02000);p.setColor(color);c.drawText(s,x,y,p);p.setShadowLayer(0,0,0,0);p.setTextAlign(Paint.Align.LEFT);
     }
     /** Panel with a 1dp border. */
     void panel(Canvas c,float l,float t,float r,float b,float radius){round(c,l,t,r,b,radius,SURFACE);outline(c,l,t,r,b,radius,BORDER,dp(1));}

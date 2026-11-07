@@ -69,6 +69,8 @@ public class CannonBaker {
 
 
     // ================================================================== the high poly sculpt: the hand cannon
+    /** The warden's variant ("green"): army-green paint like her armour, green plasma instead of blue. */
+    static boolean GREEN=false;
     static final int M_PAINT=0,M_STEEL=1,M_GUN=2,M_LEATHER=3,M_RUBBER=4,M_BRASS=5,M_GLOW=6,M_HOLE=7;
     static float sdfAll(float x,float y,float z,int[] mat){return body(x,y,z,mat);}
     static float sdf(int g,float x,float y,float z,int[] mat){return body(x,y,z,mat);}
@@ -156,7 +158,7 @@ public class CannonBaker {
     static float[] material(int m,float x,float y,float z,float lap,float cav){
         float r,g,b,rough,metal,emit=0;float grime=smooth(.55f,.85f,fbm(x*9+3,y*9,z*9,4))*.5f;float n=fbm(x*45,y*45,z*45,4);
         switch(m){
-            case M_PAINT:{float mott=fbm(x*14+5,y*14,z*14,4);r=.24f*(.85f+mott*.3f);g=.024f*(.85f+mott*.3f);b=.018f*(.85f+mott*.3f);
+            case M_PAINT:{float mott=fbm(x*14+5,y*14,z*14,4);float mk=.85f+mott*.3f;if(GREEN){r=.072f*mk;g=.09f*mk;b=.03f*mk;}else{r=.24f*mk;g=.024f*mk;b=.018f*mk;}
                 float wear=smooth(.62f,.85f,fbm(x*70,y*70,z*70,4)*.6f+lap*.0011f+fbm(x*9+7,y*9,z*9,3)*.35f);
                 r=mix(r,.6f,wear);g=mix(g,.6f,wear);b=mix(b,.6f,wear);float k=1-grime*.6f-cav*.5f;r*=k;g*=k;b*=k;
                 rough=mix(.42f+n*.12f,.26f,wear)+grime*.25f;metal=wear;break;}
@@ -166,7 +168,7 @@ public class CannonBaker {
             case M_LEATHER:{float k=.7f+.6f*fbm(x*350,y*350,z*350,3);r=.09f*k;g=.05f*k;b=.035f*k;rough=.7f+.1f*n;metal=0;break;}
             case M_RUBBER:{r=g=b=.025f*(.8f+.4f*n);rough=.85f;metal=0;break;}
             case M_BRASS:{float k=.9f+.15f*n;r=.7f*k;g=.5f*k;b=.22f*k;rough=.3f+.1f*n;metal=1;break;}
-            case M_GLOW:{float f=.75f+.25f*fbm(x*120,y*120,z*120,3);r=.2f*f;g=.55f*f;b=1f*f;rough=.08f;metal=0;emit=1;break;}   // blue plasma light
+            case M_GLOW:{float f=.75f+.25f*fbm(x*120,y*120,z*120,3);if(GREEN){r=.3f*f;g=1f*f;b=.35f*f;}else{r=.2f*f;g=.55f*f;b=1f*f;}rough=.08f;metal=0;emit=1;break;}   // blue plasma light
             case M_HOLE:{r=g=b=.01f;rough=.9f;metal=0;break;}
             default:{r=g=b=.01f;rough=.8f;metal=0;}
         }
@@ -495,6 +497,7 @@ public class CannonBaker {
         File assets=new File(a[0]),prev=new File(a[1]);assets.mkdirs();prev.mkdirs();String mode=a.length>2?a[2]:"";
         long t0=System.currentTimeMillis();
         CAGE=.012f;RANGE=.006f;NAME="cannon";
+        if(mode.equals("green")){GREEN=true;NAME="cannon_green";mode="";}
         buildLow();int lowTris=0;for(Chart c:charts)lowTris+=c.tris.size();
         System.out.println("low poly: "+lowTris+" triangles; "+charts.size()+" UV charts");
         if(mode.equals("low")){AW=AH=64;A_R=A_G=A_B=AO=NX=NY=NZ=HT=RO=ME=EM=new float[AW*AH];preview(prev,-.7f,.35f,"cannon_low.png",v(.33f,0,.03f),.85f,900,500,true);return;}
@@ -502,10 +505,10 @@ public class CannonBaker {
         if(mode.equals("high")){long hp=meshHigh(0,.0005f,null);System.out.println("high poly: "+hp+" triangles");}
         System.out.println("baking…");bake();dilate(10);writeMaps(assets);
         float pom=2*RANGE*texelsPerMetre/AW;
-        preview(prev,-.7f,.35f,"cannon_bake.png",v(.33f,0,.03f),.85f,900,500,false);
-        preview(prev,2.4f,.3f,"cannon_bake_b.png",v(.33f,0,.03f),.85f,900,500,false);
-        preview(prev,-.7f,.35f,"cannon_wire.png",v(.33f,0,.03f),.85f,900,500,true);
-        int tr=writeMesh(new File(assets,"cannon.bin"),pom);System.out.println("mesh written: "+tr+" triangles");
+        preview(prev,-.7f,.35f,NAME+"_bake.png",v(.33f,0,.03f),.85f,900,500,false);
+        preview(prev,2.4f,.3f,NAME+"_bake_b.png",v(.33f,0,.03f),.85f,900,500,false);
+        preview(prev,-.7f,.35f,NAME+"_wire.png",v(.33f,0,.03f),.85f,900,500,true);
+        int tr=writeMesh(new File(assets,NAME+".bin"),pom);System.out.println("mesh written: "+tr+" triangles");
         System.out.println("done in "+(System.currentTimeMillis()-t0)/1000+" s");
     }
 }

@@ -20,7 +20,7 @@ final class MapEditor {
     boolean canUndo(){return !undo.isEmpty();}boolean canRedo(){return !redo.isEmpty();}
     boolean undo(){if(undo.isEmpty())return false;redo.push(map.save());restore(undo.pop());return true;}
     boolean redo(){if(redo.isEmpty())return false;undo.push(map.save());restore(redo.pop());return true;}
-    private void restore(String s){SectorMap m=SectorMap.load(s);map.vertices=m.vertices;map.sectors=m.sectors;map.things=m.things;map.playerX=m.playerX;map.playerY=m.playerY;map.facing=m.facing;map.name=m.name;map.index();}
+    private void restore(String s){SectorMap m=SectorMap.load(s);map.vertices=m.vertices;map.sectors=m.sectors;map.things=m.things;map.playerX=m.playerX;map.playerY=m.playerY;map.facing=m.facing;map.name=m.name;map.wallTex=m.wallTex;map.index();}
     private void done(){map.index();}
 
     static float snap(float n,float step){return Math.round(n/step)*step;}
@@ -102,6 +102,8 @@ final class MapEditor {
     /** surface: 0 walls, 1 floor, 2 ceiling. */
     boolean setTexture(int i,int surface,int tex){if(i<0||i>=map.sectors.size())return false;push();SectorMap.Sector s=map.sectors.get(i);
         if(surface==0)s.wallTex=tex;else if(surface==1)s.floorTex=tex;else s.ceilTex=tex;done();return true;}
+    /** Paints one wall face (along a→b, facing its left side); tex < 0 goes back to the sector's wall texture. */
+    boolean setWallTexture(int a,int b,int tex){push();if(tex<0)map.wallTex.remove(SectorMap.wallKey(a,b));else map.wallTex.put(SectorMap.wallKey(a,b),tex);done();return true;}
     boolean setSpecial(int i,int sp,int tag){if(i<0||i>=map.sectors.size())return false;push();SectorMap.Sector s=map.sectors.get(i);s.special=sp;s.tag=tag;
         if(sp==SectorMap.SP_LAVA)s.floorTex=Tex.LAVA;done();return true;}
     /** A solid column: the sector rises to its ceiling (Doom-style pillar). */
@@ -192,7 +194,9 @@ final class MapEditor {
         push();ArrayList<SectorMap.Vertex> vs=new ArrayList<>();int[] remap=new int[map.vertices.size()];
         for(int i=0;i<map.vertices.size();i++)if(used.contains(i)){remap[i]=vs.size();vs.add(map.vertices.get(i));}
         for(SectorMap.Sector s:map.sectors)for(int i=0;i<s.loop.size();i++)s.loop.set(i,remap[s.loop.get(i)]);
-        map.vertices=vs;done();return removed;
+        java.util.HashMap<Long,Integer> wt=new java.util.HashMap<>();
+        for(java.util.Map.Entry<Long,Integer> e:map.wallTex.entrySet()){int a=(int)(e.getKey()>>32),b=(int)(long)e.getKey();if(used.contains(a)&&used.contains(b))wt.put(SectorMap.wallKey(remap[a],remap[b]),e.getValue());}
+        map.wallTex=wt;map.vertices=vs;done();return removed;
     }
     /** "Geometry valid" or the first problem. */
     String validateMap(){
@@ -210,6 +214,10 @@ final class MapEditor {
                     if(onSegment(a.x,a.y,b.x,b.y,v.x,v.y)&&Math.hypot(v.x-a.x,v.y-a.y)>.001&&Math.hypot(v.x-b.x,v.y-b.y)>.001)mids.add(k);}
                 final float dx=b.x-a.x,dy=b.y-a.y;
                 mids.sort((u,w)->{SectorMap.Vertex x=map.vertices.get(u),y=map.vertices.get(w);return Float.compare((x.x-a.x)*dx+(x.y-a.y)*dy,(y.x-a.x)*dx+(y.y-a.y)*dy);});
+                // a painted wall that gets split keeps its paint on every piece
+                if(!mids.isEmpty())for(int dir=0;dir<2;dir++){int fa=dir==0?ia:ib,fb=dir==0?ib:ia;Integer t=map.wallTex.remove(SectorMap.wallKey(fa,fb));if(t==null)continue;
+                    ArrayList<Integer> chain=new ArrayList<>();chain.add(ia);chain.addAll(mids);chain.add(ib);
+                    for(int k=0;k+1<chain.size();k++){int x=chain.get(k),y=chain.get(k+1);map.wallTex.put(dir==0?SectorMap.wallKey(x,y):SectorMap.wallKey(y,x),t);}}
                 loop.addAll(mids);}
             sec.loop=loop;}
     }

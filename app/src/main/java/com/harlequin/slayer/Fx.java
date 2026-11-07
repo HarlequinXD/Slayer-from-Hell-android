@@ -45,6 +45,23 @@ final class Fx {
         for(int k=0;k<2;k++)spawn(ADD,x+rnd(-.05f,.05f),y+rnd(-.05f,.05f),z+rnd(-.05f,.05f),-vx*.08f+rnd(-.4f,.4f),-vy*.08f+rnd(-.4f,.4f),-vz*.08f+rnd(-.2f,.6f),rnd(.2f,.4f),rnd(.04f,.08f),-.12f,.5f,1.5f,.15f,.4f,1f,.9f);
         if(rng.nextFloat()<.3f)spawn(SMOKE,x,y,z,rnd(-.2f,.2f),rnd(-.2f,.2f),rnd(.1f,.4f),rnd(.4f,.8f),rnd(.04f,.07f),.3f,.1f,1,.1f,.12f,.2f,.35f);
     }
+    /** One frame of a green plasma bolt: a bright core and a short streak. */
+    void plasma(float x,float y,float z,float vx,float vy,float vz){
+        spawn(ADD,x,y,z,0,0,0,.05f,rnd(.1f,.14f),-1.5f,0,0,.35f,1f,.4f,1);
+        spawn(ADD,x,y,z,0,0,0,.04f,.05f,-1f,0,0,.85f,1f,.85f,1);
+        spawn(ADD,x-vx*.01f,y-vy*.01f,z-vz*.01f,-vx*.05f+rnd(-.3f,.3f),-vy*.05f+rnd(-.3f,.3f),-vz*.05f+rnd(-.3f,.3f),rnd(.12f,.25f),rnd(.03f,.05f),-.15f,0,2,.2f,.9f,.3f,.9f);
+    }
+    /** A plasma bolt bursting: a green flash and sparks. */
+    void plasmaBurst(float x,float y,float z,float nx,float ny,float nz){
+        spawn(STAR,x,y,z,0,0,0,.1f,rnd(.4f,.5f),2.5f,0,0,.4f,1f,.45f,1);
+        for(int k=0;k<18;k++){float s=rnd(2,7);float[] d=jitter(nx,ny,nz,1.1f);spawn(ADD,x,y,z,d[0]*s,d[1]*s,d[2]*s,rnd(.15f,.4f),rnd(.012f,.025f),-.4f,-6f,.8f,.45f,1f,.5f,1);}
+        for(int k=0;k<4;k++){float s=rnd(.3f,1f);float[] d=jitter(nx,ny,nz,1f);spawn(SMOKE,x,y,z,d[0]*s,d[1]*s,d[2]*s+.3f,rnd(.7f,1.3f),rnd(.08f,.14f),.5f,.15f,1.8f,.12f,.16f,.12f,.45f);}
+    }
+    /** An energy cell pickup: a green glow with motes circling it. */
+    void cell(float x,float y,float z,float t){
+        if(rng.nextFloat()<.5f)spawn(ADD,x+rnd(-.05f,.05f),y+rnd(-.05f,.05f),z+rnd(-.05f,.05f),0,0,rnd(.05f,.2f),rnd(.2f,.35f),rnd(.04f,.07f),-.1f,0,.5f,.35f,1f,.45f,1);
+        float a=t*3;spawn(ADD,x+(float)Math.cos(a)*.16f,y+(float)Math.sin(a)*.16f,z+.05f*(float)Math.sin(t*5),0,0,0,.12f,.025f,0,0,0,.6f,1f,.6f,1);
+    }
     /** A fireball bursting against a wall or her: a flash, a spray of blue sparks and smoke. */
     void explosion(float x,float y,float z,float nx,float ny,float nz){
         spawn(STAR,x,y,z,0,0,0,.12f,rnd(.55f,.7f),2.5f,0,0,.5f,.75f,1f,1);

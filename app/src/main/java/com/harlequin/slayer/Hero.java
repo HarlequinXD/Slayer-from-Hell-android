@@ -54,8 +54,10 @@ final class Hero {
     private float pelvisDrop;
     // wall bumps and leaning on walls
     private float bumpT=9,bumpK,bumpNx,bumpNy,wallLean,wallNx,wallNy;
-    /** The left hand has the shotgun. */
-    boolean hasGun=true;
+    /** The left hand has the shotgun (the old weapon; the warden now wears a hand cannon instead). */
+    boolean hasGun=false;
+    /** A hand cannon on the left forearm: raised along the aim while firing. cannonKick is the recoil (set by the game). */
+    boolean leftCannon=true;float cannonKick;float[] cannonMat;private float cannonAim,cannonHold;
 
     static float wrap(float a){while(a>Math.PI)a-=2*Math.PI;while(a<-Math.PI)a+=2*Math.PI;return a;}
     static float smooth(float a,float b,float x){float t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);}
@@ -72,7 +74,9 @@ final class Hero {
     void update(float dt,float time,Player pl,Level level,float camYaw,float camPitch,boolean firing,boolean sawHeld,Gun gun){
         steps=0;
         // ---------------------------------------------------------------- facing and stance
-        if((hasGun&&(firing||gun.state!=Gun.IDLE))||sawHeld)aimHold=1.4f;else aimHold-=dt;
+        if((hasGun&&(firing||gun.state!=Gun.IDLE))||sawHeld||(leftCannon&&firing))aimHold=1.4f;else aimHold-=dt;
+        if(leftCannon&&firing)cannonHold=1.1f;else cannonHold-=dt;
+        cannonAim=approach(cannonAim,cannonHold>0?1:0,cannonHold>0?16:4,dt);cannonKick=approach(cannonKick,0,9,dt);
         boolean aiming=aimHold>0;
         aim=approach(aim,aiming?1:0,aiming?14:4,dt);
         speed=(float)Math.hypot(pl.vx,pl.vy);
@@ -269,8 +273,16 @@ final class Hero {
             h[2]+=(float)Math.sin(time*1.6f+1)*.005f;
             float[] hw=M.pt(T,h);
             if(wallHand!=null){float k=Math.max(wallLean,Math.min(1,bump*1.3f));hw=Hero.lerpW(hw,wallHand,k);}
-            arm(1,T,hw,Model.norm(M.dir(T,pp)));
+            float[] lPole=Model.norm(M.dir(T,pp));
+            if(leftCannon&&cannonAim>.001f){   // the cannon arm raised along the aim, kicking back with each shot
+                float[] lsh=M.pt(T,shoulder(1));float cp=(float)Math.cos(eyePitch);
+                float[] d=v((float)Math.cos(eyeYaw)*cp,(float)Math.sin(eyeYaw)*cp,(float)Math.sin(eyePitch));
+                float[] side=v(-(float)Math.sin(eyeYaw),(float)Math.cos(eyeYaw),0);
+                float[] aimH=Model.add(Model.add(Model.add(lsh,d,.5f-.09f*cannonKick),side,.1f),v(0,0,1),-.1f);
+                hw=Hero.lerpW(hw,aimH,cannonAim);lPole=Model.norm(lerp3(lPole,Model.add(v(0,0,-1),side,.6f),cannonAim));}
+            arm(1,T,hw,lPole);
         }
+        if(leftCannon){mat[sidePart(1,S_HAND)]=null;cannonMat=M.mul(mat[sidePart(1,S_FORE)],CANNON_BIND_L);}   // her left hand is inside the cannon's sleeve
         eyeFrame=M.id();
         mat[P_GLAIVE_SHAFT]=mat[P_GLAIVE_HEAD]=null;
     }
@@ -298,6 +310,11 @@ final class Hero {
     static final float[] SAW_BIND;
     /** Caddy frame in saw space: origin between the two shells' rims, x = up the shells, y = back along the forearm, z = away from her. */
     static final float[] CADDY_FRAME=M.basis(v(.2f,-.084f,-.01f),v(0,0,1),v(-1,0,0),v(0,-1,0));
+    /** The cannon's frame on the left forearm: the chainsaw frame mirrored across her body (a reflection). */
+    static final float[] CANNON_BIND_L;
+    static{float[] e=elbow(1),hc=handCentre(1);float[] ax=Model.norm(Model.sub(hc,e));
+        float[] z=Model.norm(Model.sub(v(1,0,0),Model.mul(ax,ax[0])));float[] y=Model.cross(z,ax);
+        CANNON_BIND_L=M.basis(Model.add(hc,ax,-.25f),ax,Model.mul(y,-1),z);}
     static{float[] e=elbow(-1),hc=handCentre(-1);float[] ax=Model.norm(Model.sub(hc,e));
         float[] z=Model.norm(Model.sub(v(1,0,0),Model.mul(ax,ax[0])));float[] y=Model.cross(z,ax);
         SAW_BIND=M.basis(Model.add(hc,ax,-.25f),ax,y,z);}

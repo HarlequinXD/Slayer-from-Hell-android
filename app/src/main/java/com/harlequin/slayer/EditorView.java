@@ -32,7 +32,7 @@ final class EditorView extends View implements Pointer.Aware {
     private static final String[] ENTITY_TOOLS={"Place","Select","Move","Rotate","Delete"};
     private static final int[] ENTITY_TOOL_ICONS={Icons.PLUS_SQUARE,Icons.POINTER,Icons.MOVE,Icons.RESET,Icons.TRASH};
     /** The entity list, in display order. */
-    private static final int[] ENTITY_LIST={SectorMap.T_PLAYER,SectorMap.T_DEMON,SectorMap.T_HEALTH,SectorMap.T_SHELLS,SectorMap.T_LAMP_WARM,SectorMap.T_LAMP_RED,SectorMap.T_LAMP_BLUE,SectorMap.T_LAMP_WHITE};
+    private static final int[] ENTITY_LIST={SectorMap.T_PLAYER,SectorMap.T_DEMON,SectorMap.T_HEALTH,SectorMap.T_SHELLS,SectorMap.T_LAMP_WARM,SectorMap.T_LAMP_RED,SectorMap.T_LAMP_BLUE,SectorMap.T_LAMP_WHITE,SectorMap.T_KEY_RED,SectorMap.T_KEY_BLUE,SectorMap.T_KEY_YELLOW};
     // touch targets
     private static final int H_SKILLF=300;
     private static final int H_BACK=1,H_SAVE=2,H_PLAY=3,H_TAB=10,H_UNDO=20,H_REDO=21,H_NAME=22,H_PAGE=30,H_TOOL=40,H_APPLY=60,H_ZOOMIN=61,H_ZOOMOUT=62,H_ENT=100,H_ETOOL=200;
@@ -211,7 +211,7 @@ final class EditorView extends View implements Pointer.Aware {
     private static int thingColor(int t){switch(t){case SectorMap.T_DEMON:return Ui.RED;case SectorMap.T_HEALTH:return 0xffff5a8a;case SectorMap.T_SHELLS:return Ui.AMBER;
         case SectorMap.T_PLAYER:return Ui.GREEN;default:{int c=SectorMap.LAMP_RGB[t];return 0xff000000|c;}}}
     private static int thingIcon(int t){switch(t){case SectorMap.T_DEMON:return Icons.SKULL;case SectorMap.T_HEALTH:return Icons.HEART;case SectorMap.T_SHELLS:return Icons.PACKAGE;
-        case SectorMap.T_PLAYER:return Icons.PERSON;default:return Icons.SUN;}}
+        case SectorMap.T_PLAYER:return Icons.PERSON;case SectorMap.T_KEY_RED:case SectorMap.T_KEY_BLUE:case SectorMap.T_KEY_YELLOW:return Icons.DOOR;default:return Icons.SUN;}}
     private void drawThings(Canvas c){
         SectorMap m=map();boolean full=mode==ENTITIES;
         for(int i=0;i<m.things.size();i++){SectorMap.Thing t=m.things.get(i);drawThing(c,t.type,t.x,t.y,t.angle,full&&i==selThing,full);}

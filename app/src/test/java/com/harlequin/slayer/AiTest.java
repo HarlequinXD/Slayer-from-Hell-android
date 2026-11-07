@@ -10,7 +10,7 @@ public class AiTest {
 
     static final class World {
         final Level L=new Level(Maps.campaign(1));final Player p=new Player();final Enemies E;float t;int shots,hits,lavaFrames;
-        World(){p.spawn(L);E=new Enemies(L,p);}
+        World(){p.spawn(L);E=new Enemies(L,p);for(Level.Door d:L.doors)L.openDoor(d);}   // the keep's doors open: the whole map is one fight
         void run(int frames,float moveY){for(int i=0;i<frames;i++){t+=DT;p.update(DT,L,0,moveY,0,0,false,0);E.update(DT,t);
             for(Enemies.Event e:E.events){if(e.type==Enemies.EV_SHOOT)shots++;if(e.type==Enemies.EV_HIT_PLAYER)hits++;}E.events.clear();
             for(Demon d:E.demons)if(!d.dead&&L.atF(d.body.x,d.body.y).floorMat==Tex.LAVA)lavaFrames++;
@@ -36,8 +36,8 @@ public class AiTest {
     }
     @Test public void gunfireIsHeardThroughTheKeep(){
         World w=new World();w.enter();w.E.hear(w.p.x,w.p.y,w.p.z,32);w.run(5,0);
-        int alerted=0;for(Demon d:w.E.demons)if(d.ai.alerted)alerted++;
-        assertTrue("a shot alerts most of them: "+alerted,alerted>=w.E.demons.size()/2);
+        int alerted=0,near=0;for(Demon d:w.E.demons){if(Math.hypot(d.spawnX-w.p.x,d.spawnY-w.p.y)>32)continue;near++;if(d.ai.alerted)alerted++;}
+        assertTrue("a shot alerts most of those in earshot: "+alerted+" / "+near,alerted>=near/2&&near>=4);
     }
     @Test public void shotsKillThemAndTheyStayDead(){
         World w=new World();w.enter();w.run(30,0);

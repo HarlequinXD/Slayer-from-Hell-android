@@ -29,7 +29,7 @@ import static org.lwjgl.glfw.GLFW.*;
  */
 public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DView.Host,Controls.Shell {
     private long window;private int fbW=1600,fbH=900;private float scaleX=1,scaleY=1;
-    private Context ctx;private Sfx sfx;private MapStore store;private final Devices dev=new Devices();private Overlay layer;private Controls controls;
+    private Context ctx;private Sfx sfx;private MapStore store;private Music music;private StoryView story;private final Devices dev=new Devices();private Overlay layer;private Controls controls;
     private final ArrayList<View> screens=new ArrayList<>();
     private MenuView menu,overlay;private EditorView editor;private Edit3DView view3d;private float[] cam3d;
     private GLSurfaceView gl;private Game game;private Hud hud;
@@ -63,6 +63,7 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
         File home=new File(System.getenv("APPDATA")!=null?System.getenv("APPDATA"):System.getProperty("user.home"),System.getenv("APPDATA")!=null?"SlayerFromHell":".slayerfromhell");
         ctx=new Context(home,density);
         sfx=new Sfx(ctx);store=new MapStore(ctx.getFilesDir());
+        music=new Music();if(shots==null){music.prepare(MusicSynth.HELL);music.prepare(MusicSynth.TECH);}
         layer=new Overlay(ctx);controls=new Controls(dev,layer,this);controls.toggleFullscreen=this::toggleFullscreen;
         dev.last=Devices.SRC_MOUSE;
         callbacks();
@@ -176,11 +177,12 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
     // ---------------------------------------------------------------- screens (as MainActivity)
     private void clearScreens(){screens.clear();}
     private void addScreen(View v){screens.add(v);}
-    private void showMenu(int page){stopGame();clearScreens();editor=null;menu=new MenuView(ctx,this,store);addScreen(menu);menu.show(page);}
+    private void showMenu(int page){stopGame();clearScreens();editor=null;story=null;music.stop();menu=new MenuView(ctx,this,store);addScreen(menu);menu.show(page);}
     private void stopGame(){if(gl!=null)gl=null;game=null;hud=null;overlay=null;sfx.engine(0,1);}
     private void startGame(SectorMap m){
         stopGame();clearScreens();playing=m.copy();view3d=null;
         game=new Game(ctx,m);game.sfx=sfx;sfx.restartLoops();
+        music.play(Music.themeOf(m));game.onCombat=c->music.combat(c);
         hud=new Hud(ctx,game);game.hud=hud;hud.onPause=()->new Handler().post(this::pauseGame);
         game.listener=(k,t,s)->new Handler().post(()->levelComplete(k,t,s));
         gl=new GLSurfaceView(ctx);gl.setRenderer(game);
@@ -190,20 +192,26 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
         if(game==null)return;
         if(overlay!=null)screens.remove(overlay);
         overlay=new MenuView(ctx,this,store);overlay.fromEditor=fromEditor;addScreen(overlay);
-        if(page==MenuView.COMPLETE)overlay.hasNext=campaign>=0&&campaign+1<Maps.count();
+        if(page==MenuView.COMPLETE){overlay.hasNext=campaign>=0;overlay.finale=campaign+1>=Maps.count();}
         overlay.show(page);
     }
     private void pauseGame(){if(game==null||overlay!=null)return;game.paused=true;sfx.engine(0,1);showOverlay(MenuView.PAUSE);}
     private void levelComplete(int kills,int total,float seconds){
-        if(game==null)return;game.paused=true;sfx.engine(0,1);showOverlay(MenuView.COMPLETE);
+        if(game==null)return;game.paused=true;sfx.engine(0,1);music.combat(false);
+        if(campaign>=0)MenuView.unlock(ctx,campaign+1);
+        showOverlay(MenuView.COMPLETE);
         overlay.kills=kills;overlay.total=total;overlay.seconds=seconds;overlay.doneName=playing.name;
     }
-    @Override public void playCampaign(int i){campaign=i;fromEditor=false;startGame(Maps.campaign(i));}
+    @Override public void playCampaign(int i){campaign=i;fromEditor=false;SectorMap m=Maps.campaign(i);story(Story.before(i),Music.themeOf(m),()->startGame(m));}
+    private void story(Story.Chapter ch,int theme,Runnable then){
+        stopGame();clearScreens();menu=null;editor=null;music.play(theme);
+        story=new StoryView(ctx,ch,()->new Handler().post(()->{story=null;then.run();}));addScreen(story);
+    }
     @Override public void playCustom(String id){try{campaign=-1;fromEditor=false;startGame(store.load(id));}catch(Exception e){layer.toast("Couldn't open that level: "+e.getMessage());}}
     @Override public void editMap(String id,SectorMap from){
         SectorMap m=from;
         if(m==null)try{m=store.load(id);}catch(Exception e){layer.toast("Couldn't open that level: "+e.getMessage());return;}
-        stopGame();clearScreens();menu=null;
+        stopGame();clearScreens();menu=null;music.stop();
         editor=new EditorView(ctx,m,id,store,this);if(id==null)editor.autoSave();
         addScreen(editor);
     }
@@ -211,15 +219,20 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
     @Override public void resume(){if(game==null)return;if(overlay!=null){screens.remove(overlay);overlay=null;}game.paused=false;}
     @Override public void restart(){SectorMap m=playing;if(m!=null)startGame(m);}
     @Override public void leaveGame(){
-        if(fromEditor&&editor!=null){stopGame();clearScreens();addScreen(editor);return;}
+        if(fromEditor&&editor!=null){stopGame();clearScreens();music.stop();addScreen(editor);return;}
         showMenu(campaign>=0?MenuView.CAMPAIGN:MenuView.CUSTOM);
     }
-    @Override public void nextLevel(){if(campaign>=0&&campaign+1<Maps.count())playCampaign(campaign+1);else showMenu(MenuView.MAIN);}
+    @Override public void nextLevel(){
+        if(campaign<0){showMenu(MenuView.MAIN);return;}
+        MenuView.unlock(ctx,campaign+1);
+        if(campaign+1<Maps.count())playCampaign(campaign+1);
+        else{campaign=-1;story(Story.epilogue(),MusicSynth.HELL,()->showMenu(MenuView.CAMPAIGN));}
+    }
     @Override public void exitEditor(){editor=null;showMenu(MenuView.CUSTOM);}
     @Override public void testPlay(SectorMap m){EditorView keep=editor;campaign=-1;fromEditor=true;startGame(m);editor=keep;}
     @Override public void open3D(){
         if(editor==null)return;
-        stopGame();clearScreens();
+        stopGame();clearScreens();music.stop();
         game=new Game(ctx,editor.map().copy());game.editMode=true;game.sfx=sfx;
         if(cam3d!=null)game.setEditCamera(cam3d[0],cam3d[1],cam3d[2],cam3d[3],cam3d[4]);
         gl=new GLSurfaceView(ctx);gl.setRenderer(game);
@@ -235,6 +248,7 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
     @Override public Hud playing(){return game!=null&&hud!=null&&overlay==null&&view3d==null&&!game.paused?hud:null;}
     @Override public void back(){
         if(layer.back())return;
+        if(story!=null){story.finish();return;}
         if(overlay!=null){overlay.back();return;}
         if(view3d!=null){back3D();return;}
         if(game!=null){pauseGame();return;}
@@ -261,9 +275,15 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
             open3D();for(int i=0;i<240;i++)frame(1/60f);shot(dir+"/5-editor-3d.png");back3D();
             {SectorMap m=editor.map();for(int k=0;k<m.sectors.size();k++){SectorMap.Sector sc=m.sectors.get(k);sc.wallTex=Tex.FIRST_LIB+(k*7)%50;sc.floorTex=Tex.FIRST_LIB+50+(k*11)%50;sc.ceilTex=Tex.FIRST_LIB+(k*13+3)%50;}}
             open3D();for(int i=0;i<400;i++)frame(1/60f);shot(dir+"/5b-new-textures-3d.png");
-            playCampaign(0);dev.key(Devices.K_W,true);for(int i=0;i<600;i++){frame(1/60f);if(game!=null&&game.loading==null&&i>200)break;}
+            showMenu(MenuView.CAMPAIGN);for(int i=0;i<10;i++)frame(1/60f);shot(dir+"/2b-campaign.png");
+            playCampaign(1);for(int i=0;i<150;i++)frame(1/60f);shot(dir+"/2c-story.png");
+            story.advance();for(int i=0;i<5;i++)frame(1/60f);shot(dir+"/2d-story-read.png");story.finish();for(int i=0;i<3;i++)frame(1/60f);
+            for(int i=0;i<600;i++){frame(1/60f);if(game!=null&&game.loading==null&&i>200)break;}
+            game.debugPlace(0,61.8f,(float)Math.PI/2);for(int i=0;i<60;i++)frame(1/60f);shot(dir+"/6b-red-door.png");
+            playCampaign(0);story.finish();for(int i=0;i<3;i++)frame(1/60f);dev.key(Devices.K_W,true);for(int i=0;i<600;i++){frame(1/60f);if(game!=null&&game.loading==null&&i>200)break;}
             for(int i=0;i<90;i++)frame(1/60f);dev.key(Devices.K_W,false);shot(dir+"/6-game.png");
             pauseGame();for(int i=0;i<10;i++)frame(1/60f);shot(dir+"/7-paused.png");
+            levelComplete(12,13,312);for(int i=0;i<10;i++)frame(1/60f);shot(dir+"/8-complete.png");
             System.out.println("shots saved to "+dir);
         }catch(Throwable t){t.printStackTrace();System.exit(1);}
         glfwDestroyWindow(window);glfwTerminate();System.exit(0);

@@ -13,13 +13,13 @@ final class Nav {
     final Level L;final int W,H;
     /** Path distance (metres) from every cell to the target; infinity where unreachable. */
     final float[] dist;
-    private int target=-1;
+    private int target=-1,version=-1;
     static final float INF=1e9f,CLIMB=Level.STEP,DROP=2.05f,HEADROOM=2.1f;
     private static final int[][] DIRS={{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
 
     Nav(Level l){L=l;W=l.W;H=l.H;dist=new float[W*H];Arrays.fill(dist,INF);}
 
-    static boolean standable(Level.Cell c){return !c.solid&&!c.lava&&c.ceil-c.floor>=HEADROOM;}
+    static boolean standable(Level.Cell c){return !c.solid&&!c.shut&&!c.lava&&c.ceil-c.floor>=HEADROOM;}
     /** Can a walker go from cell a to the neighbouring cell b? */
     boolean step(int ax,int ay,int bx,int by){
         Level.Cell a=L.at(ax,ay),b=L.at(bx,by);if(!standable(a)||!standable(b))return false;
@@ -31,7 +31,7 @@ final class Nav {
 
     /** Recomputes the field toward (x,y) if that is a different cell from last time. */
     void target(float x,float y){
-        int tx=L.ix(x),ty=L.iy(y);if(tx<0||ty<0||tx>=W||ty>=H)return;int t=ty*W+tx;if(t==target)return;target=t;
+        int tx=L.ix(x),ty=L.iy(y);if(tx<0||ty<0||tx>=W||ty>=H)return;int t=ty*W+tx;if(t==target&&version==L.navVersion)return;target=t;version=L.navVersion;
         Arrays.fill(dist,INF);dist[t]=0;
         PriorityQueue<long[]> q=new PriorityQueue<>((p,r)->Long.compare(p[0],r[0]));q.add(new long[]{0,t});
         while(!q.isEmpty()){long[] e=q.poll();int c=(int)e[1];float dc=e[0]/1000f;if(dc>dist[c]+1e-4f)continue;int cx=c%W,cy=c/W;

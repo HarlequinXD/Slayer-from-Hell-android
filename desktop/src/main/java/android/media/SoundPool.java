@@ -54,7 +54,7 @@ public class SoundPool {
 
     private void start(){
         thread=new Thread(()->{
-            try{AudioFormat fmt=new AudioFormat(OUT,16,2,true,false);SourceDataLine line=AudioSystem.getSourceDataLine(fmt);line.open(fmt,4096*2);line.start();
+            try{javax.sound.sampled.AudioFormat fmt=new javax.sound.sampled.AudioFormat(OUT,16,2,true,false);SourceDataLine line=AudioSystem.getSourceDataLine(fmt);line.open(fmt,4096*2);line.start();
                 int frames=512;float[] mix=new float[frames*2];byte[] out=new byte[frames*4];
                 while(thread!=null){
                     Arrays.fill(mix,0);

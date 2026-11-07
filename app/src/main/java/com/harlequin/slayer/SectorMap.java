@@ -13,12 +13,19 @@ import java.util.HashMap;
  */
 final class SectorMap {
     // sector specials
-    static final int SP_NONE=0,SP_LAVA=1,SP_EXIT=2,SP_SECRET=3,SP_FLICKER=4;
-    static final String[] SPECIAL_NAMES={"None","Lava (hurts)","Exit","Secret","Flickering lights"};
+    static final int SP_NONE=0,SP_LAVA=1,SP_EXIT=2,SP_SECRET=3,SP_FLICKER=4,SP_DOOR=5,SP_DOOR_RED=6,SP_DOOR_BLUE=7,SP_DOOR_YELLOW=8;
+    static final String[] SPECIAL_NAMES={"None","Lava (hurts)","Exit","Secret","Flickering lights","Door","Door · red key","Door · blue key","Door · yellow key"};
+    /** Door specials: the sector's ceiling is the door (it rises to open); its ceiling texture is the door's face. */
+    static boolean isDoor(int special){return special>=SP_DOOR&&special<=SP_DOOR_YELLOW;}
+    /** The key a door needs (0 red, 1 blue, 2 yellow), or -1. */
+    static int doorKey(int special){return special>=SP_DOOR_RED&&special<=SP_DOOR_YELLOW?special-SP_DOOR_RED:-1;}
     // thing types
-    static final int T_DEMON=0,T_HEALTH=1,T_SHELLS=2,T_LAMP_WARM=3,T_LAMP_RED=4,T_LAMP_BLUE=5,T_LAMP_WHITE=6,T_PLAYER=7;
-    static final String[] THING_NAMES={"Demon","Health orb","Energy cells","Lamp · warm","Lamp · hellfire","Lamp · cold blue","Lamp · white","Player start"};
-    static final int[] LAMP_RGB={0,0,0,0xffc890,0xff5020,0x7aa8ff,0xffffff};
+    static final int T_DEMON=0,T_HEALTH=1,T_SHELLS=2,T_LAMP_WARM=3,T_LAMP_RED=4,T_LAMP_BLUE=5,T_LAMP_WHITE=6,T_PLAYER=7,T_KEY_RED=8,T_KEY_BLUE=9,T_KEY_YELLOW=10;
+    static final String[] THING_NAMES={"Demon","Health orb","Energy cells","Lamp · warm","Lamp · hellfire","Lamp · cold blue","Lamp · white","Player start","Red key","Blue key","Yellow key"};
+    static final int[] LAMP_RGB={0,0,0,0xffc890,0xff5020,0x7aa8ff,0xffffff,0,0xff2a20,0x2a7aff,0xffd020};
+    static final String[] KEY_NAMES={"RED","BLUE","YELLOW"};
+    static final int[] KEY_RGB={0xff2a20,0x2a7aff,0xffd020};
+    static boolean isKey(int type){return type>=T_KEY_RED&&type<=T_KEY_YELLOW;}
     /** Textures a map may use (indices into Tex). */
     /** Textures a map can use: the nine classic ones, then the library's 50 sci-fi and 50 hell materials. */
     static final int[] MAP_TEXTURES=new int[9+TexLib.COUNT];
@@ -190,12 +197,33 @@ final class SectorMap {
             float px=mx-dy/l*.002f,py=my+dx/l*.002f;int best=-1;float ba=1e30f;
             for(int i=0;i<outers.size();i++){ArrayList<float[]> o=outers.get(i);float ar=signed(o);if(ar<ba&&inside(o,px,py)){ba=ar;best=i;}}
             if(best>=0)holeOf.get(best).add(in);}
-        Level.FloatList tris=new Level.FloatList();
-        for(int i=0;i<outers.size();i++){ArrayList<float[]> poly=outers.get(i);ArrayList<ArrayList<float[]>> hs=holeOf.get(i);
+        Level.FloatList tris=new Level.FloatList();float want=0;
+        for(int i=0;i<outers.size();i++){ArrayList<float[]> poly=outers.get(i);ArrayList<ArrayList<float[]>> hs=holeOf.get(i);want+=signed(poly);
             hs.sort((p,q)->Float.compare(maxXOf(q),maxXOf(p)));
-            for(ArrayList<float[]> hole:hs)poly=bridge(poly,hole);
+            for(ArrayList<float[]> hole:hs){want+=signed(hole);poly=bridge(poly,hole);}
             tris.add(earClip(poly));}
-        return tris.toArray();
+        float[] t=tris.toArray();
+        if(Math.abs(triArea(t)-want)>.002f*Math.abs(want)+.01f)t=slabs(edges.values());   // ear clipping tripped on a degenerate bridge: decompose instead
+        return t;
+    }
+    private static float triArea(float[] t){float a=0;for(int k=0;k+5<t.length;k+=6)a+=((t[k+2]-t[k])*(t[k+5]-t[k+1])-(t[k+4]-t[k])*(t[k+3]-t[k+1]))*.5f;return a;}
+    /**
+     * Triangles covering the region bounded by directed edges (region on the left), by horizontal slabs: between
+     * each pair of consecutive vertex heights, the edges crossing the slab are sorted by x and paired inside/outside,
+     * and each pair spans a trapezoid. Always exact, just more triangles than ear clipping.
+     */
+    private float[] slabs(java.util.Collection<int[]> es){
+        ArrayList<float[]> E=new ArrayList<>();java.util.TreeSet<Float> ys=new java.util.TreeSet<>();
+        for(int[] e:es){Vertex a=vertices.get(e[0]),b=vertices.get(e[1]);ys.add(a.y);ys.add(b.y);if(Math.abs(a.y-b.y)>1e-6f)E.add(new float[]{a.x,a.y,b.x,b.y});}
+        Level.FloatList out=new Level.FloatList();Float prev=null;
+        for(Float y:ys){if(prev!=null&&y-prev>1e-6f){float y0=prev,y1=y,ym=(y0+y1)*.5f;ArrayList<float[]> cross=new ArrayList<>();
+                for(float[] e:E){float lo=Math.min(e[1],e[3]),hi=Math.max(e[1],e[3]);if(lo<=y0+1e-6f&&hi>=y1-1e-6f){
+                    float k=(e[2]-e[0])/(e[3]-e[1]);cross.add(new float[]{e[0]+(ym-e[1])*k,e[0]+(y0-e[1])*k,e[0]+(y1-e[1])*k});}}
+                cross.sort((p,q)->Float.compare(p[0],q[0]));
+                for(int i=0;i+1<cross.size();i+=2){float[] L=cross.get(i),R=cross.get(i+1);
+                    out.add(L[1],y0,R[1],y0,R[2],y1);out.add(L[1],y0,R[2],y1,L[2],y1);}}
+            prev=y;}
+        return out.toArray();
     }
     private static long key(int a,int b){return ((long)a<<32)|(b&0xffffffffL);}
     private void addLoop(java.util.HashMap<Long,int[]> edges,ArrayList<Integer> loop,boolean forward){
@@ -214,8 +242,8 @@ final class SectorMap {
     /** Joins a hole (clockwise) into the outer polygon (counter-clockwise) with a two-way bridge edge. */
     private static ArrayList<float[]> bridge(ArrayList<float[]> outer,ArrayList<float[]> hole){
         int hi=0;for(int i=1;i<hole.size();i++)if(hole.get(i)[0]>hole.get(hi)[0])hi=i;
-        float[] h=hole.get(hi);int best=-1;float bd=1e30f;
-        for(int i=0;i<outer.size();i++){float[] o=outer.get(i);float d=(o[0]-h[0])*(o[0]-h[0])+(o[1]-h[1])*(o[1]-h[1]);if(d>=bd)continue;
+        float[] h=hole.get(hi);int best=rayBridge(outer,h);float bd=1e30f;
+        if(best<0)for(int i=0;i<outer.size();i++){float[] o=outer.get(i);float d=(o[0]-h[0])*(o[0]-h[0])+(o[1]-h[1])*(o[1]-h[1]);if(d>=bd)continue;
             if(visible(outer,hole,h,o))  {bd=d;best=i;}}
         if(best<0)best=0;
         ArrayList<float[]> r=new ArrayList<>();
@@ -224,6 +252,33 @@ final class SectorMap {
         r.add(outer.get(best));
         for(int i=best+1;i<outer.size();i++)r.add(outer.get(i));
         return r;
+    }
+    /**
+     * The outer vertex to bridge a hole's rightmost vertex h to (Eberly): cast a ray from h toward +x, take the
+     * nearest edge it hits and that edge's rightmost end, unless a reflex vertex lies inside the triangle between
+     * them, in which case the one closest in angle to the ray. -1 if the ray hits nothing.
+     */
+    private static int rayBridge(ArrayList<float[]> outer,float[] h){
+        int n=outer.size(),ei=-1;float bx=Float.MAX_VALUE;
+        for(int i=0;i<n;i++){float[] p=outer.get(i),q=outer.get((i+1)%n);
+            if((p[1]>h[1])==(q[1]>h[1])&&!(p[1]==h[1]&&q[1]==h[1]))continue;
+            if(p[1]==q[1]){float x=Math.min(p[0],q[0]);if(x>=h[0]-1e-6f&&x<bx){bx=x;ei=i;}continue;}
+            float x=p[0]+(h[1]-p[1])*(q[0]-p[0])/(q[1]-p[1]);if(x>=h[0]-1e-6f&&x<bx){bx=x;ei=i;}}
+        if(ei<0)return -1;
+        float[] p=outer.get(ei),q=outer.get((ei+1)%n);
+        if(Math.abs(p[0]-bx)<1e-5f&&Math.abs(p[1]-h[1])<1e-5f)return ei;
+        if(Math.abs(q[0]-bx)<1e-5f&&Math.abs(q[1]-h[1])<1e-5f)return (ei+1)%n;
+        int m=Math.abs(p[0]-q[0])>1e-5f?(p[0]>q[0]?ei:(ei+1)%n):(Math.abs(p[1]-h[1])<Math.abs(q[1]-h[1])?ei:(ei+1)%n);float[] M=outer.get(m),I={bx,h[1]};   // a vertical wall: its nearer end
+        // reflex vertices inside triangle (h, I, M) block it: take the one at the smallest angle to the ray
+        float bestAng=Float.MAX_VALUE,bestD=Float.MAX_VALUE;int pick=m;
+        float sgn=Math.signum(orient(h,I,M));
+        for(int i=0;i<n;i++){if(i==m)continue;float[] v=outer.get(i);if(same(v,M))continue;
+            float[] pv=outer.get((i+n-1)%n),nv=outer.get((i+1)%n);if(orient(pv,v,nv)>0)continue;   // convex
+            if(v[0]<h[0]-1e-6f)continue;
+            float o1=orient(h,I,v)*sgn,o2=orient(I,M,v)*sgn,o3=orient(M,h,v)*sgn;if(o1<-1e-6f||o2<-1e-6f||o3<-1e-6f)continue;
+            float ang=(float)Math.abs(Math.atan2(v[1]-h[1],v[0]-h[0])),d=(v[0]-h[0])*(v[0]-h[0])+(v[1]-h[1])*(v[1]-h[1]);
+            if(ang<bestAng-1e-6f||(Math.abs(ang-bestAng)<1e-6f&&d<bestD)){bestAng=ang;bestD=d;pick=i;}}
+        return pick;
     }
     private static boolean visible(ArrayList<float[]> outer,ArrayList<float[]> hole,float[] a,float[] b){
         for(ArrayList<float[]> poly:java.util.Arrays.asList(outer,hole))for(int i=0;i<poly.size();i++){float[] p=poly.get(i),q=poly.get((i+1)%poly.size());
@@ -240,7 +295,8 @@ final class SectorMap {
                 if(orient(a,b,c)<=1e-7f)continue;
                 boolean inside=false;
                 for(int j=0;j<n&&!inside;j++){float[] p=rem.get(j);if(p==a||p==b||p==c||same(p,a)||same(p,b)||same(p,c))continue;
-                    if(orient(a,b,p)>=-1e-7f&&orient(b,c,p)>=-1e-7f&&orient(c,a,p)>=-1e-7f)inside=true;}
+                    // strictly inside, or on the new diagonal c→a (points on the ear's own edges a→b, b→c don't block it)
+                    if(orient(a,b,p)>1e-6f&&orient(b,c,p)>1e-6f&&orient(c,a,p)>=-1e-6f)inside=true;}
                 if(inside)continue;
                 if(k+6<=out.length){out[k++]=a[0];out[k++]=a[1];out[k++]=b[0];out[k++]=b[1];out[k++]=c[0];out[k++]=c[1];}
                 rem.remove(i);found=true;break;}

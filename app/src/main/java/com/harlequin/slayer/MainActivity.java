@@ -161,7 +161,8 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
             case KeyEvent.KEYCODE_ENTER:case KeyEvent.KEYCODE_NUMPAD_ENTER:return Devices.K_ENTER;case KeyEvent.KEYCODE_DEL:return Devices.K_BACKSPACE;case KeyEvent.KEYCODE_TAB:return Devices.K_TAB;
             case KeyEvent.KEYCODE_E:return Devices.K_E;case KeyEvent.KEYCODE_F:return Devices.K_F;case KeyEvent.KEYCODE_Q:return Devices.K_Q;case KeyEvent.KEYCODE_R:return Devices.K_R;
             case KeyEvent.KEYCODE_CTRL_LEFT:case KeyEvent.KEYCODE_CTRL_RIGHT:return Devices.K_CTRL;case KeyEvent.KEYCODE_Z:return Devices.K_Z;case KeyEvent.KEYCODE_Y:return Devices.K_Y;
-            case KeyEvent.KEYCODE_FORWARD_DEL:return Devices.K_DELETE;default:return -1;}
+            case KeyEvent.KEYCODE_FORWARD_DEL:return Devices.K_DELETE;case KeyEvent.KEYCODE_P:return Devices.K_P;case KeyEvent.KEYCODE_H:case KeyEvent.KEYCODE_MOVE_HOME:return Devices.K_H;
+            case KeyEvent.KEYCODE_LEFT_BRACKET:return Devices.K_LBR;case KeyEvent.KEYCODE_RIGHT_BRACKET:return Devices.K_RBR;case KeyEvent.KEYCODE_PAGE_UP:return Devices.K_PGUP;case KeyEvent.KEYCODE_PAGE_DOWN:return Devices.K_PGDN;case KeyEvent.KEYCODE_C:return Devices.K_C;default:return -1;}
     }
     @Override public boolean dispatchKeyEvent(KeyEvent e){
         boolean down=e.getAction()==KeyEvent.ACTION_DOWN;int code=e.getKeyCode();

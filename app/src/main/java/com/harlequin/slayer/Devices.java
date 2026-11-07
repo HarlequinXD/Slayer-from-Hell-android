@@ -10,7 +10,7 @@ final class Devices {
     static final int A=1,B=2,X=4,Y=8,LB=16,RB=32,BACK=64,START=128,LS=256,RS=512,UP=1024,DOWN=2048,LEFT=4096,RIGHT=8192;
     // logical keys
     static final int K_W=0,K_A=1,K_S=2,K_D=3,K_SPACE=4,K_SHIFT=5,K_ESC=6,K_ENTER=7,K_BACKSPACE=8,K_TAB=9,K_E=10,K_F=11,K_Q=12,K_R=13,
-            K_UP=14,K_DOWN=15,K_LEFT=16,K_RIGHT=17,K_CTRL=18,K_Z=19,K_Y=20,K_F11=21,K_DELETE=22,K_COUNT=23;
+            K_UP=14,K_DOWN=15,K_LEFT=16,K_RIGHT=17,K_CTRL=18,K_Z=19,K_Y=20,K_F11=21,K_DELETE=22,K_P=23,K_H=24,K_LBR=25,K_RBR=26,K_PGUP=27,K_PGDN=28,K_C=29,K_COUNT=30;
     static final int SRC_TOUCH=0,SRC_MOUSE=1,SRC_PAD=2,SRC_KEYS=3;
 
     // ---------------------------------------------------------------- gamepad

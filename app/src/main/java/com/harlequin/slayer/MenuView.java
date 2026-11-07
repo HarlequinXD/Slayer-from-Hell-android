@@ -157,32 +157,42 @@ final class MenuView extends View implements Pointer.Aware {
     }
     private static final int[] LINES={200,270,360,540};
     private void settings(Canvas c,float w,float h){
-        float l=dp(80),rr=Math.min(w-dp(40),l+dp(560)),rowH=dp(50),gap=dp(8),top=dp(88);
         String[] labels={"Look speed","Invert look","Render resolution","Show frame rate","Aim assist"};
+        float l=dp(80),rr=Math.min(w-dp(40),l+dp(560)),top=dp(88),gap=Math.min(dp(8),Math.max(dp(4),(h-top-dp(12))*.025f)),
+            rowH=Math.min(dp(50),(h-top-dp(12)-gap*(labels.length-1))/labels.length);   // rows shrink to fit short screens
         String[] vals={String.format(java.util.Locale.US,"%.1f",Game.lookSens*1000),Game.invertLook?"On":"Off",Game.RENDER_LINES+" lines"+(Game.RENDER_LINES==270?" (like RPG Pocket Editor)":""),Hud.showFps?"On":"Off",Game.aimAssist?"On":"Off"};
         for(int i=0;i<labels.length;i++){float t=top+i*(rowH+gap);
             ui.round(c,l,t,rr,t+rowH,dp(10),0xb0140808);ui.outline(c,l,t,rr,t+rowH,dp(10),0x40ffffff,dp(1));
-            ui.text(c,labels[i],l+dp(20),t+rowH*.5f+dp(6),16,0xfff4e8e0,1,-1);
-            if(i==0){r.set(rr-dp(150),t+dp(12),rr-dp(106),t+rowH-dp(12));ui.button(c,r,Icons.MINUS,null,Ui.NORMAL);ui.hit(r,H_SET+10);
+            ui.textMid(c,labels[i],l+dp(20),t+rowH*.5f,16,0xfff4e8e0,1,-1);float in=Math.min(dp(10),rowH*.18f);
+            if(i==0){r.set(rr-dp(150),t+in,rr-dp(106),t+rowH-in);ui.button(c,r,Icons.MINUS,null,Ui.NORMAL);ui.hit(r,H_SET+10);
                 ui.textMid(c,vals[i],rr-dp(78),t+rowH*.5f,15,0xffffb080,2,0);
-                r.set(rr-dp(56),t+dp(12),rr-dp(12),t+rowH-dp(12));ui.button(c,r,Icons.PLUS,null,Ui.NORMAL);ui.hit(r,H_SET+11);}
-            else{r.set(rr-dp(250),t+dp(10),rr-dp(12),t+rowH-dp(10));ui.button(c,r,-1,vals[i],Ui.ACTIVE);ui.hit(r,H_SET+i);}}
+                r.set(rr-dp(56),t+in,rr-dp(12),t+rowH-in);ui.button(c,r,Icons.PLUS,null,Ui.NORMAL);ui.hit(r,H_SET+11);}
+            else{r.set(rr-dp(250),t+in,rr-dp(12),t+rowH-in);ui.button(c,r,-1,vals[i],Ui.ACTIVE);ui.hit(r,H_SET+i);}}
+    }
+    /** Button sizes for n stacked buttons between top and bottom: as tall as 58dp, smaller on short screens. */
+    private float[] stack(int n,float top,float bottom){float gap=Math.min(dp(10),Math.max(dp(5),(bottom-top)*.03f));float bh=Math.min(dp(58),(bottom-top-gap*(n-1))/n);
+        return new float[]{bh,gap,top+Math.max(0,(bottom-top-(bh*n+gap*(n-1)))*.5f)};}
+    private void title(Canvas c,String text,float x,float y,float size,int col,int glowCol){
+        glow.setTextSize(dp(size));glow.setTextAlign(Paint.Align.CENTER);glow.setColor(col);glow.setShadowLayer(dp(16),0,0,glowCol);c.drawText(text,x,y,glow);glow.setShadowLayer(0,0,0,0);glow.setTextAlign(Paint.Align.LEFT);
     }
     private void pause(Canvas c,float w,float h){
-        glow.setTextSize(dp(54));glow.setTextAlign(Paint.Align.CENTER);glow.setColor(0xffff5a1a);glow.setShadowLayer(dp(16),0,0,0xffc02000);c.drawText("PAUSED",w/2,h*.28f,glow);glow.setShadowLayer(0,0,0,0);glow.setTextAlign(Paint.Align.LEFT);
-        float bw=Math.min(dp(380),w*.5f),l=(w-bw)/2,bh=dp(58),gap=dp(10),t=h*.36f;
+        float size=Math.min(54,h/dp(1)*.13f);title(c,"PAUSED",w/2,dp(16)+dp(size),size,0xffff5a1a,0xffc02000);
+        float bw=Math.min(dp(380),w*.5f),l=(w-bw)/2;float[] st=stack(3,dp(36)+dp(size),h-dp(16));float bh=st[0],gap=st[1],t=st[2];
         entry(c,l,t,l+bw,t+bh,Icons.PLAY,"Resume",null,H_ITEM+20,true);t+=bh+gap;
         entry(c,l,t,l+bw,t+bh,Icons.RESET,"Restart level",null,H_ITEM+21,false);t+=bh+gap;
         entry(c,l,t,l+bw,t+bh,fromEditor?Icons.SECTORS:Icons.ARROW_LEFT,fromEditor?"Back to the editor":"Quit to main menu",null,H_ITEM+22,false);
     }
+    /** Level complete: the title across the top; the result on the left and the choices on the right (landscape), so everything fits on a phone. */
     private void complete(Canvas c,float w,float h){
-        glow.setTextSize(dp(46));glow.setTextAlign(Paint.Align.CENTER);glow.setColor(0xffffb040);glow.setShadowLayer(dp(18),0,0,0xffff5000);c.drawText("LEVEL COMPLETE",w/2,h*.24f,glow);glow.setShadowLayer(0,0,0,0);glow.setTextAlign(Paint.Align.LEFT);
-        ui.text(c,doneName.toUpperCase(),w/2,h*.24f+dp(30),15,0xffe8c8a8,1,0);
+        float size=Math.min(46,h/dp(1)*.11f);float ty=dp(14)+dp(size);title(c,"LEVEL COMPLETE",w/2,ty,size,0xffffb040,0xffff5000);
+        ui.text(c,doneName.toUpperCase(),w/2,ty+dp(24),15,0xffe8c8a8,1,0);
         int m=(int)(seconds/60),s=(int)(seconds%60);
-        float cx=w/2,sy=h*.24f+dp(80);
-        ui.text(c,kills+" / "+total,cx-dp(90),sy,28,kills==total?0xff80ff90:0xffffffff,2,0);ui.text(c,"DEMONS SLAIN",cx-dp(90),sy+dp(20),11,0xa0e0c0a0,1,0);
-        ui.text(c,m+":"+(s<10?"0":"")+s,cx+dp(90),sy,28,0xffffffff,2,0);ui.text(c,"TIME",cx+dp(90),sy+dp(20),11,0xa0e0c0a0,1,0);
-        float bw=Math.min(dp(380),w*.5f),l=(w-bw)/2,bh=dp(58),gap=dp(10),t=sy+dp(48);
+        float top=ty+dp(40),bottom=h-dp(16);boolean side=w>h*1.35f;
+        float cx=side?w*.3f:w/2,sy=side?(top+bottom)*.5f:top+dp(30);
+        ui.text(c,kills+" / "+total,cx-dp(80),sy,28,kills==total?0xff80ff90:0xffffffff,2,0);ui.text(c,"DEMONS SLAIN",cx-dp(80),sy+dp(20),11,0xa0e0c0a0,1,0);
+        ui.text(c,m+":"+(s<10?"0":"")+s,cx+dp(80),sy,28,0xffffffff,2,0);ui.text(c,"TIME",cx+dp(80),sy+dp(20),11,0xa0e0c0a0,1,0);
+        int n=hasNext?3:2;float bw=Math.min(dp(380),side?w*.42f:w*.5f),l=side?w*.53f:(w-bw)/2;
+        float[] st=stack(n,side?top:sy+dp(36),bottom);float bh=st[0],gap=st[1],t=st[2];
         if(hasNext){entry(c,l,t,l+bw,t+bh,Icons.PLAY,"Next level",null,H_ITEM+30,true);t+=bh+gap;}
         entry(c,l,t,l+bw,t+bh,Icons.RESET,"Play again",null,H_ITEM+21,!hasNext);t+=bh+gap;
         entry(c,l,t,l+bw,t+bh,fromEditor?Icons.SECTORS:Icons.ARROW_LEFT,fromEditor?"Back to the editor":"Main menu",null,H_ITEM+22,false);

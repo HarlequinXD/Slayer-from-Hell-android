@@ -63,7 +63,7 @@ final class Overlay extends View implements Pointer.Aware {
     private void drawDialog(Canvas c,float w,float h){
         float dp=ui.dp;ui.rect(c,0,0,w,h,0xb0080302);
         float pw=Math.min(w-dp*40,kind==PROMPT?dp*620:dp*440),ph;
-        int rows=kind==CHOOSE?Math.min(items.length,7):0;
+        int rows=kind==CHOOSE?Math.max(2,Math.min(items.length,Math.min(7,(int)((h-dp*(70+56+24))/(dp*46))))):0;   // as many rows as the screen allows; the rest scroll
         if(kind==TEXTURE){drawTextures(c,w,h);return;}
         ph=kind==CHOOSE?dp*(70+rows*46+56):kind==CONFIRM?dp*176:Math.min(h-dp*24,dp*(118+4*46+58));
         float l=(w-pw)/2,t=(h-ph)/2,rr=l+pw,b=t+ph;
@@ -90,7 +90,7 @@ final class Overlay extends View implements Pointer.Aware {
             String s=text.toString();boolean blink=(System.currentTimeMillis()/500)%2==0;
             ui.textMid(c,ui.ellipsize(s,15,1,r.width()-dp*30)+(blink?"|":" "),r.left+dp*12,r.centerY(),15,Ui.TEXT,1,-1);postInvalidateDelayed(250);
             // the on-screen keyboard
-            float ky=y+dp*52,gap=dp*5,kw=(pw-dp*32-gap*9)/10,kh=dp*40;
+            float ky=y+dp*52,gap=dp*5,kw=(pw-dp*32-gap*9)/10,kh=Math.min(dp*40,(b-dp*12-ky-gap*4)/5);   // keys shrink on short screens
             for(int row=0;row<ROWS.length;row++){String keys=ROWS[row];
                 for(int i=0;i<keys.length();i++){char ch=keys.charAt(i);if(shift)ch=Character.toUpperCase(ch);
                     r.set(l+dp*16+i*(kw+gap),ky+row*(kh+gap),l+dp*16+i*(kw+gap)+kw,ky+row*(kh+gap)+kh);ui.button(c,r,-1,String.valueOf(ch),Ui.NORMAL);ui.hit(r,H_KEY+ch);}}

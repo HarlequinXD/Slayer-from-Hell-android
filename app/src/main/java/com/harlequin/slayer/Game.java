@@ -275,7 +275,8 @@ final class Game implements GLSurfaceView.Renderer {
         if(gun.state==Gun.FIRE&&gun.t<1.2f&&fx.rng.nextFloat()<.35f){float[] mz=M.pt(hero.eyeFrame,gun.muzzleCam);fx.spawn(Fx.SMOKE,mz[0],mz[1],mz[2],fx.rnd(-.05f,.05f),fx.rnd(-.05f,.05f),fx.rnd(.15f,.35f),fx.rnd(.8f,1.4f),.025f,.6f,0,1f,.5f,.48f,.46f,.25f);}
         // embers rising from the lava
         for(int k=0;k<2;k++){float ex=pl.x+fx.rnd(-12,12),ey=pl.y+fx.rnd(-12,12);Level.Cell c=level.atF(ex,ey);
-            if(!c.solid&&c.lava)fx.spawn(Fx.ADD,ex,ey,c.floor+.05f,fx.rnd(-.2f,.2f),fx.rnd(-.2f,.2f),fx.rnd(.6f,1.6f),fx.rnd(1.2f,2.6f),fx.rnd(.012f,.025f),-.2f,.1f,.2f,1f,.4f,.08f,1);}
+            if(!c.solid&&c.lava){int g=Tex.glowStrength(c.floorMat)>0?Tex.glowColor(c.floorMat):0xff6614;   // embers in the pool's own colour
+                fx.spawn(Fx.ADD,ex,ey,c.floor+.05f,fx.rnd(-.2f,.2f),fx.rnd(-.2f,.2f),fx.rnd(.6f,1.6f),fx.rnd(1.2f,2.6f),fx.rnd(.012f,.025f),-.2f,.1f,.2f,((g>>16)&255)/255f,((g>>8)&255)/255f*.7f,(g&255)/255f*.7f,1);}}
         fx.update(dt,level);bleed(dt);blood.update(dt,level);
         gloryReady=in.sawing()?false:Glory.tryStart(pl,enemies,level)!=null;
         if(fx.updateShells(dt,level)>0)sfx.play(Sfx.TINK,.5f,.9f+fx.rng.nextFloat()*.3f);

@@ -287,6 +287,7 @@ final class EditorView extends View implements Pointer.Aware {
                 y+=dp(56);}
             else{ui.text(c,"Nothing selected",l+dp(10),y+dp(22),12.5f,Ui.TEXT_2,1,-1);ui.text(c,"Use Select, then Apply on an entity.",l+dp(10),y+dp(42),11,Ui.TEXT_3);}
             y+=dp(110);
+            if(y+dp(40)>h-dp(6))return;   // not enough room on short screens: the summary is the part that gives way
             ui.caption(c,"In this map",l,y,Ui.TEXT_3);y+=dp(18);
             ui.text(c,count(SectorMap.T_DEMON)+" demons · "+count(SectorMap.T_HEALTH)+" health · "+count(SectorMap.T_SHELLS)+" shells",l,y,11.5f,Ui.TEXT_2);y+=dp(18);
             int lamps=0;for(SectorMap.Thing t:m.things)if(t.type>=SectorMap.T_LAMP_WARM&&t.type<=SectorMap.T_LAMP_WHITE)lamps++;
@@ -325,6 +326,9 @@ final class EditorView extends View implements Pointer.Aware {
             p.setColor(thingColor(t));c.drawCircle(dp(57),y+dp(32),dp(3),p);ui.text(c,sub,dp(64),y+dp(36),10.5f,Ui.TEXT_3);
             float vt=Math.max(top,y),vb=Math.min(bottom,y+rowH);if(vb>vt)ui.hit(0,vt,pw,vb,H_ENT+i);}
         c.restoreToCount(save);
+        if(maxScroll>0){   // more below (or above): a scroll bar and a fade at the cut edge
+            float vh=bottom-top,ch=vh+maxScroll,bh=vh*vh/ch,by=top+(vh-bh)*entScroll/maxScroll;ui.round(c,pw-dp(6),by,pw-dp(3),by+bh,dp(2),0x90ff8a5a);
+            if(entScroll<maxScroll-1){p.setShader(new android.graphics.LinearGradient(0,bottom-dp(28),0,bottom,0x00140806,0xf0140806,android.graphics.Shader.TileMode.CLAMP));c.drawRect(0,bottom-dp(28),pw-dp(7),bottom,p);p.setShader(null);}}
     }
     private void drawCursorControls(Canvas c){
         if(!Hud.touchControls)return;   // mouse / controller: click the map instead (the d-pad still steps the cursor)
@@ -564,8 +568,9 @@ final class EditorView extends View implements Pointer.Aware {
         follow=false;if(nx==cursorX&&ny==cursorY)return;cursorX=nx;cursorY=ny;
         if(stage==1&&tool==MOVE&&mode==SECTORS)previewMove();invalidate();
     }
-    @Override public void pointerPan(float dx,float dy){if(cell<=0)return;follow=false;viewX+=dx/cell;viewY-=dy/cell;invalidate();}
+    @Override public void pointerPan(float dx,float dy){if(mode==ENTITIES&&!Float.isNaN(Ui.hoverX)&&Ui.hoverX<entPanelW()){entScroll+=dy;invalidate();return;}if(cell<=0)return;follow=false;viewX+=dx/cell;viewY-=dy/cell;invalidate();}
     @Override public void pointerZoom(float steps,float x,float y){
+        if(mode==ENTITIES&&x<entPanelW()){entScroll-=steps*dp(48);invalidate();return;}
         if(cell<=0)return;float bx=wx(x),by=wy(y);zoom=Math.max(.3f,Math.min(4f,zoom*(float)Math.pow(1.25f,steps)));cell=(mapB()-mapT())/16f*zoom;
         if(inMap(x,y)){viewX+=bx-wx(x);viewY+=by-wy(y);}follow=false;invalidate();}
     @Override public void pointerShortcut(char k){if(k=='z')tap(H_UNDO);else if(k=='y')tap(H_REDO);else if(k=='s')tap(H_SAVE);invalidate();}

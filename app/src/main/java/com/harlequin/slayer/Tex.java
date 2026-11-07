@@ -21,6 +21,11 @@ final class Tex {
     static{String[] base={"Hell brick","Metal panel","Floor tiles","Diamond plate","Concrete","Crate","Light panel","Carved pillar","Lava",
             "Gunmetal","Walnut","Leather","Fabric","Brass","Shell hull"};
         System.arraycopy(base,0,NAMES,0,base.length);for(int i=0;i<TexLib.COUNT;i++)NAMES[FIRST_LIB+i]=TexLib.name(i);}
+    /** Lava, and the library's magma family: standing in it burns. */
+    static boolean hurts(int id){return id==LAVA||(id>=FIRST_LIB&&TexLib.hurts(id-FIRST_LIB));}
+    /** The colour a glowing material casts (sRGB hex) and its strength (0..1); 0 strength if it doesn't glow. */
+    static int glowColor(int id){return id==LAVA?0xff5a14:id==LIGHT?0xffd8a8:id>=FIRST_LIB?TexLib.glowColor(id-FIRST_LIB):0;}
+    static float glowStrength(int id){return id==LAVA?1:id==LIGHT?1:id>=FIRST_LIB?TexLib.glowStrength(id-FIRST_LIB):0;}
     static boolean emissive(int id){return id==LIGHT||id==LAVA||(id>=FIRST_LIB&&TexLib.RECIPES[id-FIRST_LIB].emit>0);}
     static int category(int id){return id<FIRST_LIB?(id<=LAVA?CAT_CLASSIC:CAT_PROP):TexLib.category(id-FIRST_LIB);}
     /** Flowing, pulsing emissive surfaces (lava and the magma family): their UVs scroll. */

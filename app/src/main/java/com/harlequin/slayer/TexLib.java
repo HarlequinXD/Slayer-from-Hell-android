@@ -413,22 +413,37 @@ final class TexLib {
                     break;}
             }
         }
-        switch(R.pat){
-            case PANELS:case HEX:case ARMOR:case HELLIRON:pom=.035f;tile=.5f;nk=4;break;
-            case VENT:case GRATE:case PERFORATED:pom=.05f;tile=R.pat==VENT?.5f:.6f;nk=5;break;
-            case CIRCUIT:case DATA:case LIGHTSTRIP:pom=.02f;tile=.5f;nk=3;break;
-            case TECHFLOOR:case HAZARD:case TREAD:pom=.03f;tile=.5f;nk=4;break;
-            case PIPES:case CABLES:case RIBBED:pom=.06f;tile=.5f;nk=5;break;
-            case GLASS:pom=.01f;tile=.5f;nk=2;break;
-            case FLESH:case SINEW:case SCALES:pom=.05f;tile=.45f;nk=5;break;
-            case BONE:case ROOTS:pom=.07f;tile=.45f;nk=6;break;
-            case OBSIDIAN:pom=.03f;tile=.4f;nk=5;break;
-            case BASALT:case COBBLE:case BLOODSTONE:case RUNESTONE:case SCORCHED:case SIGIL:pom=.06f;tile=.4f;nk=5;break;
-            case ASH:case BRIMSTONE:pom=.04f;tile=.35f;nk=4;break;
-            case MAGMA:pom=.05f;tile=.35f;nk=5;break;
-        }
+        float[] pp=params(R.pat);pom=pp[0];tile=pp[1];nk=pp[2];
         return new float[]{pom,tile,nk,emit};
     }
+    /**
+     * Parallax depth, repeats per metre and normal strength for a pattern. The repeat sizes put each pattern's
+     * features at real-world scale next to the classic textures (e.g. brick courses ~30 cm, floor tiles ~1 m).
+     */
+    static float[] params(int pat){float[] pp={.04f,.5f,4};
+        switch(pat){
+            case PANELS:case HEX:case ARMOR:case HELLIRON:pp[0]=.035f;pp[1]=.5f;pp[2]=4;break;
+            case VENT:case GRATE:case PERFORATED:pp[0]=.05f;pp[1]=pat==VENT?.5f:.6f;pp[2]=5;break;
+            case CIRCUIT:case DATA:case LIGHTSTRIP:pp[0]=.02f;pp[1]=.5f;pp[2]=3;break;
+            case TECHFLOOR:case HAZARD:case TREAD:pp[0]=.03f;pp[1]=.5f;pp[2]=4;break;
+            case PIPES:case CABLES:case RIBBED:pp[0]=.06f;pp[1]=.5f;pp[2]=5;break;
+            case GLASS:pp[0]=.01f;pp[1]=.5f;pp[2]=2;break;
+            case FLESH:case SINEW:case SCALES:pp[0]=.05f;pp[1]=.45f;pp[2]=5;break;
+            case BONE:case ROOTS:pp[0]=.07f;pp[1]=.45f;pp[2]=6;break;
+            case OBSIDIAN:pp[0]=.03f;pp[1]=.4f;pp[2]=5;break;
+            case BASALT:case COBBLE:case BLOODSTONE:case RUNESTONE:case SCORCHED:case SIGIL:pp[0]=.06f;pp[1]=.4f;pp[2]=5;break;
+            case ASH:case BRIMSTONE:pp[0]=.04f;pp[1]=.35f;pp[2]=4;break;
+            case MAGMA:pp[0]=.05f;pp[1]=.35f;pp[2]=5;break;
+        }
+        return pp;
+    }
+    /** Repeats per metre of library material i (what the level builder uses for UVs). */
+    static float tile(int i){return params(RECIPES[i].pat)[1];}
+    /** The colour its glow casts (sRGB hex) and how strongly (0..1). */
+    static int glowColor(int i){return RECIPES[i].glow;}
+    static float glowStrength(int i){return RECIPES[i].emit;}
+    /** The magma family burns like lava. */
+    static boolean hurts(int i){return RECIPES[i].pat==MAGMA;}
     /** Distance from (px,py) to the segment a-b. */
     static float segD(float px,float py,float ax,float ay,float bx,float by){
         float dx=bx-ax,dy=by-ay,l=dx*dx+dy*dy;float t=l<1e-6f?0:Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/l));return (float)Math.hypot(px-ax-dx*t,py-ay-dy*t);

@@ -36,7 +36,7 @@ final class Level {
         ox=m.minX()-1;oy=m.minY()-1;W=(int)Math.ceil((m.maxX()-m.minX()+2)/CELL);H=(int)Math.ceil((m.maxY()-m.minY()+2)/CELL);
         cells=new Cell[W*H];
         for(int j=0;j<H;j++)for(int i=0;i<W;i++){Cell c=new Cell();int s=m.sectorAt(cx(i),cy(j));c.sector=s;
-            if(s<0){c.solid=true;}else{SectorMap.Sector S=m.sectors.get(s);c.floor=S.floor;c.ceil=S.ceil;c.floorMat=S.floorTex;c.lava=S.special==SectorMap.SP_LAVA||S.floorTex==Tex.LAVA;c.solid=S.ceil-S.floor<.05f;}
+            if(s<0){c.solid=true;}else{SectorMap.Sector S=m.sectors.get(s);c.floor=S.floor;c.ceil=S.ceil;c.floorMat=S.floorTex;c.lava=S.special==SectorMap.SP_LAVA||Tex.hurts(S.floorTex);c.solid=S.ceil-S.floor<.05f;}
             cells[j*W+i]=c;}
         spawnX=m.playerX;spawnY=m.playerY;spawnAngle=m.facing;
         for(SectorMap.Thing t:m.things){
@@ -46,10 +46,28 @@ final class Level {
             else if(t.type>=SectorMap.T_LAMP_WARM&&t.type<=SectorMap.T_LAMP_WHITE&&lights.size()<MAX_LIGHTS){int s=m.sectorAt(t.x,t.y);if(s<0)continue;SectorMap.Sector S=m.sectors.get(s);
                 float z=Math.min(S.ceil-.3f,S.floor+3.4f);boolean fl=S.special==SectorMap.SP_FLICKER||t.type==SectorMap.T_LAMP_RED;
                 lights.add(new Light(t.x,t.y,z,SectorMap.LAMP_RGB[t.type],t.type==SectorMap.T_LAMP_WHITE?3.6f:3.2f,Math.max(9,Math.min(16,(S.ceil-S.floor)*2.2f)),fl));}}
-        // lava glows: one light over every sizeable lava pool, while slots remain
-        for(int s=0;s<m.sectors.size()&&lights.size()<MAX_LIGHTS;s++){SectorMap.Sector S=m.sectors.get(s);if(!(S.special==SectorMap.SP_LAVA||S.floorTex==Tex.LAVA))continue;
-            if(Math.abs(m.area(S))<4)continue;float[] c=m.centroid(S);lights.add(new Light(c[0],c[1],S.floor+1.1f,0xff5a14,2.4f,8f,true));}
+        glowLights(m);
         lightMask=new int[W*H];bakeLights();
+    }
+    /**
+     * Glowing surfaces light their surroundings: lava and every glowing floor, ceiling and wall becomes a light in
+     * its own colour (flickering for lava and magma). Placed lamps keep their slots; the glows take what is left,
+     * strongest (biggest, brightest) first, spaced at least 3 m apart so one big glowing room doesn't use them all.
+     */
+    private void glowLights(SectorMap m){
+        ArrayList<float[]> cand=new ArrayList<>();   // x, y, z, rgb, intensity, radius, flicker, weight
+        for(int s=0;s<m.sectors.size();s++){SectorMap.Sector S=m.sectors.get(s);float area=Math.abs(m.area(S));float[] c=m.centroid(S);
+            int ft=S.special==SectorMap.SP_LAVA&&Tex.glowStrength(S.floorTex)<=0?Tex.LAVA:S.floorTex;float fk=Tex.glowStrength(ft);
+            if(fk>0&&area>=1.5f){float k=.55f+.45f*fk;cand.add(new float[]{c[0],c[1],S.floor+1.1f,Tex.glowColor(ft),2.3f*k,Math.max(7,Math.min(12,6+(float)Math.sqrt(area)*1.4f)),Tex.flows(ft)||ft==Tex.LAVA?1:0,area*k});}
+            float ck=Tex.glowStrength(S.ceilTex);
+            if(ck>0&&area>=1&&S.ceil-S.floor>.6f){float k=.55f+.45f*ck;cand.add(new float[]{c[0],c[1],S.ceil-.45f,Tex.glowColor(S.ceilTex),2.6f*k,Math.max(7,Math.min(14,(S.ceil-S.floor)*2.4f+(float)Math.sqrt(area))),Tex.flows(S.ceilTex)?1:0,area*k*1.2f});}}
+        walls((mat,ax,ay,bx,by,z0,z1)->{float k0=Tex.glowStrength(mat);if(k0<=0)return;float dx=bx-ax,dy=by-ay,l=(float)Math.hypot(dx,dy),h=z1-z0;if(l<1||h<.4f)return;
+            float nx=-dy/l,ny=dx/l,k=.55f+.45f*k0;int n=Math.max(1,Math.round(l/4));
+            for(int q=0;q<n;q++){float t=(q+.5f)/n;cand.add(new float[]{ax+dx*t+nx*.6f,ay+dy*t+ny*.6f,z0+Math.min(1.6f,h*.5f),Tex.glowColor(mat),1.9f*k,6.5f,Tex.flows(mat)?1:0,(l/n)*Math.min(h,3)*k*.8f});}});
+        cand.sort((a,b)->Float.compare(b[7],a[7]));
+        ArrayList<float[]> placed=new ArrayList<>();
+        for(float[] c:cand){if(lights.size()>=MAX_LIGHTS)break;boolean near=false;for(float[] p:placed)if(Math.hypot(p[0]-c[0],p[1]-c[1])<3&&Math.abs(p[2]-c[2])<2.5f){near=true;break;}
+            if(near||m.sectorAt(c[0],c[1])<0)continue;placed.add(c);lights.add(new Light(c[0],c[1],c[2],(int)c[3],c[4],c[5],c[6]>.5f));}
     }
     float cx(int i){return ox+(i+.5f)*CELL;}
     float cy(int j){return oy+(j+.5f)*CELL;}
@@ -69,20 +87,25 @@ final class Level {
             float tf=tile(s.floorTex),tc=tile(s.ceilTex);
             for(int k=0;k+5<tri.length;k+=6)for(int v=0;v<3;v++){float x=tri[k+v*2],y=tri[k+v*2+1];out[s.floorTex].add(x,y,s.floor,0,0,1,1,0,0,x*tf,y*tf);}
             if(s.ceil-s.floor>.01f)for(int k=0;k+5<tri.length;k+=6)for(int v=2;v>=0;v--){float x=tri[k+v*2],y=tri[k+v*2+1];out[s.ceilTex].add(x,y,s.ceil,0,0,-1,-1,0,0,-x*tc,y*tc);}}
+        walls((mat,ax,ay,bx,by,z0,z1)->wall(out,mat,ax,ay,bx,by,z0,z1));
+        ArrayList<float[]>[] res=new ArrayList[Tex.COUNT];
+        for(int i=0;i<res.length;i++){res[i]=new ArrayList<>();res[i].add(out[i].toArray());}
+        return res;
+    }
+    interface WallSink{void wall(int mat,float ax,float ay,float bx,float by,float z0,float z1);}
+    /** Every wall face of the map (each facing the left side of a→b): one-sided walls, steps and lintels. */
+    void walls(WallSink out){
         for(SectorMap.Line L:map.lines){SectorMap.Vertex a=map.vertices.get(L.a),b=map.vertices.get(L.b);
             SectorMap.Sector F=L.front>=0?map.sectors.get(L.front):null,B=L.back>=0?map.sectors.get(L.back):null;
             if(F==null&&B==null)continue;
             int ab=map.wallTexture(L.a,L.b,-1),ba=map.wallTexture(L.b,L.a,-1);   // painted faces (from the 3D editor)
-            if(B==null){wall(out,ab>=0?ab:F.wallTex,a.x,a.y,b.x,b.y,F.floor,F.ceil);continue;}
-            if(F==null){wall(out,ba>=0?ba:B.wallTex,b.x,b.y,a.x,a.y,B.floor,B.ceil);continue;}
+            if(B==null){out.wall(ab>=0?ab:F.wallTex,a.x,a.y,b.x,b.y,F.floor,F.ceil);continue;}
+            if(F==null){out.wall(ba>=0?ba:B.wallTex,b.x,b.y,a.x,a.y,B.floor,B.ceil);continue;}
             // steps and ledges below, lintels above; each face looks into the sector it is seen from
-            if(B.floor>F.floor+1e-3f)wall(out,ab>=0?ab:B.wallTex,a.x,a.y,b.x,b.y,F.floor,Math.min(B.floor,F.ceil));
-            if(F.floor>B.floor+1e-3f)wall(out,ba>=0?ba:F.wallTex,b.x,b.y,a.x,a.y,B.floor,Math.min(F.floor,B.ceil));
-            if(B.ceil<F.ceil-1e-3f)wall(out,ab>=0?ab:B.wallTex,a.x,a.y,b.x,b.y,Math.max(B.ceil,F.floor),F.ceil);
-            if(F.ceil<B.ceil-1e-3f)wall(out,ba>=0?ba:F.wallTex,b.x,b.y,a.x,a.y,Math.max(F.ceil,B.floor),B.ceil);}
-        ArrayList<float[]>[] res=new ArrayList[Tex.COUNT];
-        for(int i=0;i<res.length;i++){res[i]=new ArrayList<>();res[i].add(out[i].toArray());}
-        return res;
+            if(B.floor>F.floor+1e-3f)out.wall(ab>=0?ab:B.wallTex,a.x,a.y,b.x,b.y,F.floor,Math.min(B.floor,F.ceil));
+            if(F.floor>B.floor+1e-3f)out.wall(ba>=0?ba:F.wallTex,b.x,b.y,a.x,a.y,B.floor,Math.min(F.floor,B.ceil));
+            if(B.ceil<F.ceil-1e-3f)out.wall(ab>=0?ab:B.wallTex,a.x,a.y,b.x,b.y,Math.max(B.ceil,F.floor),F.ceil);
+            if(F.ceil<B.ceil-1e-3f)out.wall(ba>=0?ba:F.wallTex,b.x,b.y,a.x,a.y,Math.max(F.ceil,B.floor),B.ceil);}
     }
     static final class FloatList{float[] a=new float[1024];int n;void add(float... v){if(n+v.length>a.length)a=java.util.Arrays.copyOf(a,Math.max(a.length*2,n+v.length));System.arraycopy(v,0,a,n,v.length);n+=v.length;}float[] toArray(){return java.util.Arrays.copyOf(a,n);}}
     /** A wall along a→b from z0 up to z1, facing the left side of a→b. */
@@ -96,7 +119,7 @@ final class Level {
         int[] idx={0,2,1,0,3,2};
         for(int k:idx)o.add(P[k][0],P[k][1],P[k][2],nx,ny,0,tx,ty,0,P[k][3],P[k][4]);
     }
-    static float tile(int mat){switch(mat){case Tex.BRICK:return .5f;case Tex.METAL_PANEL:return .5f;case Tex.FLOOR_TILES:return .33f;case Tex.DIAMOND_PLATE:return .5f;case Tex.CONCRETE:return .4f;
+    static float tile(int mat){if(mat>=Tex.FIRST_LIB)return TexLib.tile(mat-Tex.FIRST_LIB);switch(mat){case Tex.BRICK:return .5f;case Tex.METAL_PANEL:return .5f;case Tex.FLOOR_TILES:return .33f;case Tex.DIAMOND_PLATE:return .5f;case Tex.CONCRETE:return .4f;
         case Tex.CRATE:return 1f;case Tex.LIGHT:return 1f;case Tex.PILLAR:return .5f;case Tex.LAVA:return .3f;default:return 1f;}}
 
     // ------------------------------------------------------------------ baked light visibility

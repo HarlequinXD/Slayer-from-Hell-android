@@ -131,7 +131,8 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
             case GLFW_KEY_E:return Devices.K_E;case GLFW_KEY_F:return Devices.K_F;case GLFW_KEY_Q:return Devices.K_Q;case GLFW_KEY_R:return Devices.K_R;
             case GLFW_KEY_UP:return Devices.K_UP;case GLFW_KEY_DOWN:return Devices.K_DOWN;case GLFW_KEY_LEFT:return Devices.K_LEFT;case GLFW_KEY_RIGHT:return Devices.K_RIGHT;
             case GLFW_KEY_LEFT_CONTROL:case GLFW_KEY_RIGHT_CONTROL:return Devices.K_CTRL;case GLFW_KEY_Z:return Devices.K_Z;case GLFW_KEY_Y:return Devices.K_Y;
-            case GLFW_KEY_F11:return Devices.K_F11;case GLFW_KEY_DELETE:return Devices.K_DELETE;default:return -1;}
+            case GLFW_KEY_F11:return Devices.K_F11;case GLFW_KEY_DELETE:return Devices.K_DELETE;case GLFW_KEY_P:return Devices.K_P;case GLFW_KEY_H:case GLFW_KEY_HOME:return Devices.K_H;
+            case GLFW_KEY_LEFT_BRACKET:return Devices.K_LBR;case GLFW_KEY_RIGHT_BRACKET:return Devices.K_RBR;case GLFW_KEY_PAGE_UP:return Devices.K_PGUP;case GLFW_KEY_PAGE_DOWN:return Devices.K_PGDN;case GLFW_KEY_C:return Devices.K_C;default:return -1;}
     }
     private final GLFWGamepadState pad=GLFWGamepadState.create();
     /** The first connected gamepad (Xbox controllers via XInput, others via SDL's mapping database). */
@@ -272,7 +273,10 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
             showMenu(MenuView.SETTINGS);for(int i=0;i<10;i++)frame(1/60f);shot(dir+"/2-settings.png");
             editMap(null,Maps.campaign(0));dev.mouseMove(fbW*.45f,fbH*.5f);for(int i=0;i<10;i++)frame(1/60f);shot(dir+"/3-editor.png");
             layer.prompt("Level name","Hell's Gate",s->{});for(int i=0;i<10;i++)frame(1/60f);shot(dir+"/4-dialog.png");layer.dismiss();
-            open3D();for(int i=0;i<240;i++)frame(1/60f);shot(dir+"/5-editor-3d.png");back3D();
+            open3D();for(int i=0;i<240;i++)frame(1/60f);shot(dir+"/5-editor-3d.png");
+            dev.mouseMove(fbW*.58f,fbH*.62f);frame(1/60f);dev.mouseL=true;frame(1/60f);dev.mouseL=false;for(int i=0;i<20;i++)frame(1/60f);dev.key(Devices.K_UP,true);frame(1/60f);dev.key(Devices.K_UP,false);for(int i=0;i<30;i++)frame(1/60f);shot(dir+"/5c-editor-3d-selected.png");
+            dev.mouseR=true;dev.key(Devices.K_W,true);for(int i=0;i<40;i++)frame(1/60f);shot(dir+"/5d-editor-3d-look.png");dev.key(Devices.K_W,false);dev.mouseR=false;dev.mouseMove(fbW*.5f,fbH*.5f);for(int i=0;i<5;i++)frame(1/60f);
+            back3D();
             {SectorMap m=editor.map();for(int k=0;k<m.sectors.size();k++){SectorMap.Sector sc=m.sectors.get(k);sc.wallTex=Tex.FIRST_LIB+(k*7)%50;sc.floorTex=Tex.FIRST_LIB+50+(k*11)%50;sc.ceilTex=Tex.FIRST_LIB+(k*13+3)%50;}}
             open3D();for(int i=0;i<400;i++)frame(1/60f);shot(dir+"/5b-new-textures-3d.png");
             showMenu(MenuView.CAMPAIGN);for(int i=0;i<10;i++)frame(1/60f);shot(dir+"/2b-campaign.png");

@@ -29,4 +29,24 @@ public class TexLibTest {
         for(int i=0;i<TexLib.COUNT;i++){int id=Tex.FIRST_LIB+i;if(!Tex.emissive(id))continue;Tex.Mat m=Tex.make(id,64);int lit=0;for(int px:m.rme)if((px&255)>8)lit++;
             assertTrue(TexLib.name(i)+" has glowing texels",lit>0);assertTrue(m.emit>0);}
     }
+
+    @Test public void newTexturesTileAtTheClassicScale(){
+        // the level builder uses each material's own repeat size (it used to fall back to 1 per metre for these)
+        for(int i=0;i<TexLib.COUNT;i++){float t=Level.tile(Tex.FIRST_LIB+i);assertTrue(TexLib.name(i)+" repeats every 1.6-3 m like the classics: "+t,t>=.33f&&t<=.61f);
+            assertEquals(Tex.make(Tex.FIRST_LIB+i,8).tile,t,1e-6);}
+        assertEquals(.5f,Level.tile(Tex.BRICK),1e-6);
+    }
+    @Test public void magmaBurnsAndGlowingSurfacesLight(){
+        SectorMap m=Maps.blank();SectorMap.Sector S=m.sectors.get(0);int magma=-1,lightWall=-1;
+        for(int i=0;i<TexLib.COUNT;i++){if(TexLib.hurts(i)&&magma<0)magma=Tex.FIRST_LIB+i;if(TexLib.name(i).equals("Red alert lights"))lightWall=Tex.FIRST_LIB+i;}
+        Level plain=new Level(m);int base=plain.lights.size();
+        S.floorTex=magma;Level hot=new Level(m);
+        float[] c=m.centroid(S);assertTrue("a magma floor burns",hot.atF(c[0],c[1]).lava);
+        assertTrue("and lights the room",hot.lights.size()>base);
+        Level.Light L=hot.lights.get(hot.lights.size()-1);assertTrue("in its own colour (orange)",L.r>L.b);
+        S.floorTex=Tex.FLOOR_TILES;S.wallTex=lightWall;Level lit=new Level(m);
+        assertFalse("ordinary floors don't burn",lit.atF(c[0],c[1]).lava);
+        assertTrue("glowing walls light the room",lit.lights.size()>base);
+        assertTrue("never more than the light slots",lit.lights.size()<=Level.MAX_LIGHTS);
+    }
 }

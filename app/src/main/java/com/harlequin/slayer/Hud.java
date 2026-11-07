@@ -16,6 +16,13 @@ final class Hud extends View {
     /** Shared with the GL thread. */
     static final class Input {
         volatile float moveX,moveY;volatile boolean fire,jumpHeld,saw;
+        /** The same controls from a controller or keyboard and mouse (set by Controls), merged with the touch ones. */
+        volatile float devMoveX,devMoveY;volatile boolean devFire,devSaw,devJump;
+        float mx(){return Math.max(-1,Math.min(1,moveX+devMoveX));}
+        float my(){return Math.max(-1,Math.min(1,moveY+devMoveY));}
+        boolean firing(){return fire||devFire;}
+        boolean sawing(){return saw||devSaw;}
+        boolean jumping(){return jumpHeld||devJump;}
         private float lookX,lookY;private boolean reload,jump;
         synchronized void look(float dx,float dy){lookX+=dx;lookY+=dy;}
         synchronized float[] takeLook(){float[] r={lookX,lookY};lookX=lookY=0;return r;}
@@ -28,6 +35,8 @@ final class Hud extends View {
     /** Called when the pause button is tapped. */
     Runnable onPause;
     static boolean showFps=true;
+    /** Show the on-screen sticks and buttons (off while a controller or keyboard is in use). */
+    static volatile boolean touchControls=true;
     private float pauseX(){return getWidth()*.5f;}private float pauseY(){return dp*30;}
     private final Game game;private final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);private final float dp;
     private int movePtr=-1,lookPtr=-1,firePtr=-1,sawPtr=-1;private float mx0,my0,mx,my,lx,ly;
@@ -87,17 +96,28 @@ final class Hud extends View {
         float g=dp*(7+game.spread*26),L=dp*7;p.setStrokeWidth(dp*2);p.setColor(game.assistLock?0xf0ff5a3a:0xd0ffffff);
         c.drawLine(w/2-g-L,h/2,w/2-g,h/2,p);c.drawLine(w/2+g,h/2,w/2+g+L,h/2,p);c.drawLine(w/2,h/2-g-L,w/2,h/2-g,p);c.drawLine(w/2,h/2+g,w/2,h/2+g+L,p);
         p.setColor(0xffffffff);c.drawCircle(w/2,h/2,dp*1.4f,p);
-        // move stick
-        if(movePtr>=0){p.setStyle(Paint.Style.STROKE);p.setColor(0x60ffffff);c.drawCircle(mx0,my0,dp*60,p);p.setStyle(Paint.Style.FILL);p.setColor(0x80ffffff);
-            float dx=mx-mx0,dy=my-my0,l=(float)Math.hypot(dx,dy),R=dp*60;if(l>R){dx*=R/l;dy*=R/l;}c.drawCircle(mx0+dx,my0+dy,dp*24,p);}
-        else{p.setColor(0x26ffffff);c.drawCircle(dp*120,h-dp*110,dp*60,p);text(c,"MOVE",dp*120,h-dp*106,11,0x70ffffff,Paint.Align.CENTER);}
-        // buttons
-        button(c,fireX(),fireY(),fireR(),"FIRE",in.fire,0xffd2401a);
-        if(game.gloryReady){float pulse=.5f+.5f*(float)Math.sin(System.nanoTime()/1e9*12);   // a staggered demon in reach: GLORY KILL
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp*(3+3*pulse));p.setColor(((int)(120+120*pulse)<<24)|0xff7a1a);c.drawCircle(sawX(),sawY(),sawR()+dp*(6+5*pulse),p);p.setStyle(Paint.Style.FILL);
-            button(c,sawX(),sawY(),sawR(),"GLORY",true,0xffff6a10);text(c,"GLORY KILL",sawX(),sawY()-sawR()-dp*14,13,0xffffb070,Paint.Align.CENTER);}
-        else button(c,sawX(),sawY(),sawR(),"SAW",in.saw,0xffd39a12);
-        button(c,jumpX(),jumpY(),smallR(),"JUMP",in.jumpHeld,0xff7a7a80);
+        if(touchControls){
+            // move stick
+            if(movePtr>=0){p.setStyle(Paint.Style.STROKE);p.setColor(0x60ffffff);c.drawCircle(mx0,my0,dp*60,p);p.setStyle(Paint.Style.FILL);p.setColor(0x80ffffff);
+                float dx=mx-mx0,dy=my-my0,l=(float)Math.hypot(dx,dy),R=dp*60;if(l>R){dx*=R/l;dy*=R/l;}c.drawCircle(mx0+dx,my0+dy,dp*24,p);}
+            else{p.setColor(0x26ffffff);c.drawCircle(dp*120,h-dp*110,dp*60,p);text(c,"MOVE",dp*120,h-dp*106,11,0x70ffffff,Paint.Align.CENTER);}
+            // buttons
+            button(c,fireX(),fireY(),fireR(),"FIRE",in.fire,0xffd2401a);
+            if(game.gloryReady){float pulse=.5f+.5f*(float)Math.sin(System.nanoTime()/1e9*12);   // a staggered demon in reach: GLORY KILL
+                p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp*(3+3*pulse));p.setColor(((int)(120+120*pulse)<<24)|0xff7a1a);c.drawCircle(sawX(),sawY(),sawR()+dp*(6+5*pulse),p);p.setStyle(Paint.Style.FILL);
+                button(c,sawX(),sawY(),sawR(),"GLORY",true,0xffff6a10);text(c,"GLORY KILL",sawX(),sawY()-sawR()-dp*14,13,0xffffb070,Paint.Align.CENTER);}
+            else button(c,sawX(),sawY(),sawR(),"SAW",in.saw,0xffd39a12);
+            button(c,jumpX(),jumpY(),smallR(),"JUMP",in.jumpHeld,0xff7a7a80);
+        }else{   // controller / keyboard: no touch controls, just the glory kill prompt with the right button
+            boolean pad=Controls.padHint;
+            if(game.gloryReady){float pulse=.5f+.5f*(float)Math.sin(System.nanoTime()/1e9*12);float cx=w/2,cy=h*.7f;
+                String key=pad?"LT":"RMB";float kw=p.measureText(key)+dp*20;
+                p.setTextSize(dp*15);kw=p.measureText(key)+dp*22;float tw=p.measureText("GLORY KILL");
+                float l=cx-(kw+dp*10+tw)/2;r.set(l,cy-dp*16,l+kw,cy+dp*16);
+                p.setStyle(Paint.Style.FILL);p.setColor(((int)(170+80*pulse)<<24)|0xff6a10);c.drawRoundRect(r,dp*8,dp*8,p);
+                text(c,key,r.centerX(),cy+dp*5,15,0xffffffff,Paint.Align.CENTER);
+                text(c,"GLORY KILL",r.right+dp*10,cy+dp*5,15,0xffffb070,Paint.Align.LEFT);}
+        }
         // ammo: the cannon's energy cells, as a number and a charge bar
         float ax=w-dp*24,ay=dp*38;boolean empty=game.ammo==0;
         text(c,game.ammo+" CELLS",ax,ay,24,empty?0xffff5030:0xff8cff9c,Paint.Align.RIGHT);

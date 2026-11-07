@@ -1,16 +1,13 @@
 package com.harlequin.slayer;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.DashPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
-import android.text.InputType;
 import android.view.MotionEvent;
 import android.view.View;
-import android.widget.EditText;
 import java.util.ArrayList;
 
 /**
@@ -20,7 +17,7 @@ import java.util.ArrayList;
  * Entities mode has the entity list on the left and Place / Select / Move / Rotate / Delete on the right.
  * Changes are validated (MapEditor), undoable and saved automatically.
  */
-final class EditorView extends View {
+final class EditorView extends View implements Pointer.Aware {
     interface Host {void exitEditor();void testPlay(SectorMap m);void open3D();}
     private static final int SECTORS=0,ENTITIES=1;
     // sector tools (cursor + Apply) and immediate actions
@@ -72,7 +69,7 @@ final class EditorView extends View {
         super(ctx);this.host=host;this.store=store;mapId=id;ed=new MapEditor(m);
         ui=new Ui(ctx);p=ui.p;
         cursorX=Math.round(m.playerX);cursorY=Math.round(m.playerY);viewX=cursorX;viewY=cursorY;
-        setFocusable(true);hint("Pick a tool, move the cursor with the d-pad, tap Apply");
+        setFocusable(true);hint(Hud.touchControls?"Pick a tool, move the cursor with the d-pad, tap Apply":"Pick a tool, then click on the map · wheel zooms, right-drag pans");
     }
     private float dp(float v){return ui.dp(v);}
     SectorMap map(){return ed.map;}
@@ -133,7 +130,7 @@ final class EditorView extends View {
 
     // ---------------------------------------------------------------- 2D map
     private void updateView(){
-        cell=(mapB()-mapT())/16f*zoom;
+        cell=(mapB()-mapT())/16f*zoom;if(!follow)return;
         float cx=sx(cursorX),cy=sy(cursorY),mx=(mapR()-mapL())*.28f,my=(mapB()-mapT())*.28f,ox=(mapL()+mapR())*.5f,oy=(mapT()+mapB())*.5f;
         float tx=viewX,ty=viewY;
         if(Math.abs(cx-ox)>mx)tx=cursorX-Math.signum(cx-ox)*mx/cell;if(Math.abs(cy-oy)>my)ty=cursorY+Math.signum(cy-oy)*my/cell;
@@ -330,6 +327,7 @@ final class EditorView extends View {
         c.restoreToCount(save);
     }
     private void drawCursorControls(Canvas c){
+        if(!Hud.touchControls)return;   // mouse / controller: click the map instead (the d-pad still steps the cursor)
         float cx=dpadCX(),cy=dpadCY(),R=dpadR();
         p.setShader(null);p.setStyle(Paint.Style.FILL);
         p.setColor(0x55000000);c.drawCircle(cx,cy+dp(3),R,p);p.setColor(0xe6201110);c.drawCircle(cx,cy,R,p);
@@ -494,16 +492,14 @@ final class EditorView extends View {
     void autoSave(){try{mapId=store.save(mapId,map());}catch(Exception e){hint("Couldn't save: "+e.getMessage());}}
     interface Choice {void pick(int i);}interface Text {void got(String s);}
     private void choose(String title,String[] items,int sel,Choice c){
-        new AlertDialog.Builder(getContext(),android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle(title).setSingleChoiceItems(items,sel,(d,i)->{d.dismiss();c.pick(i);invalidate();}).setNegativeButton("Cancel",null).show();
+        Overlay.get().choose(title,items,sel,i->{c.pick(i);invalidate();});
     }
     private void prompt(String title,String msg,String value,Text cb){
-        EditText et=new EditText(getContext());et.setText(value);et.setSelectAllOnFocus(true);et.setInputType(InputType.TYPE_CLASS_TEXT);
-        AlertDialog.Builder b=new AlertDialog.Builder(getContext(),android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle(title).setView(et).setPositiveButton("OK",(d,i)->{cb.got(et.getText().toString());invalidate();}).setNegativeButton("Cancel",null);
-        if(msg!=null)b.setMessage(msg);b.show();
+        Overlay.get().prompt(msg!=null?title+" · "+msg:title,value,s->{cb.got(s);invalidate();});
     }
 
     // ---------------------------------------------------------------- touch
-    private int dpadHit(float x,float y){float dx=x-dpadCX(),dy=y-dpadCY();float d=(float)Math.hypot(dx,dy);if(d>dpadR()*1.15f||d<dpadR()*.2f)return -1;
+    private int dpadHit(float x,float y){if(!Hud.touchControls)return -1;float dx=x-dpadCX(),dy=y-dpadCY();float d=(float)Math.hypot(dx,dy);if(d>dpadR()*1.15f||d<dpadR()*.2f)return -1;
         if(Math.abs(dx)>Math.abs(dy))return dx>0?1:3;return dy>0?2:0;}
     @Override public boolean onTouchEvent(MotionEvent e){
         int a=e.getActionMasked(),idx=e.getActionIndex();float x=e.getX(idx),y=e.getY(idx);
@@ -514,7 +510,8 @@ final class EditorView extends View {
                 int dir=dpadHit(x,y);
                 if(dir>=0){dpadPointer=e.getPointerId(idx);dpadDirection=dir;cursorStep(dir);nextDpadRepeat=System.currentTimeMillis()+270;postDpadRepeat();return true;}
                 if(hid==H_APPLY){cursorApply();invalidate();return true;}
-                return true;   // cursor-only editing: other touches on the map are ignored
+                if(Pointer.dispatching&&hid<0){pointerHover(x,y);cursorApply();invalidate();return true;}   // the global cursor (mouse / controller): click to Apply right there
+                return true;   // cursor-only editing with a finger: other touches on the map are ignored
             }
             if(mode==ENTITIES&&x<entPanelW()&&y>toolbarH)scrollTarget=1;
             return true;
@@ -556,8 +553,27 @@ final class EditorView extends View {
             if(System.currentTimeMillis()>=nextDpadRepeat){cursorStep(dpadDirection);nextDpadRepeat=System.currentTimeMillis()+90;}
             postDelayed(this,30);}},30);
     }
+    // ---------------------------------------------------------------- the global cursor (mouse / controller)
+    private boolean follow=true;private float hoverLX=Float.NaN,hoverLY=Float.NaN;
+    @Override public Ui pointerUi(){return ui;}
+    /** Over the open map the map cursor follows the pointer, snapped to the grid (the view stops chasing it). */
+    @Override public void pointerHover(float x,float y){
+        if(x==hoverLX&&y==hoverLY&&!Pointer.dispatching)return;hoverLX=x;hoverLY=y;   // only when the pointer moves (the d-pad may have stepped the cursor)
+        if(!inMap(x,y)||dpadHit(x,y)>=0||ui.hitAt(x,y)>=0)return;
+        float s=snap(),nx=Math.max(-500,Math.min(500,MapEditor.snap(wx(x),s))),ny=Math.max(-500,Math.min(500,MapEditor.snap(wy(y),s)));
+        follow=false;if(nx==cursorX&&ny==cursorY)return;cursorX=nx;cursorY=ny;
+        if(stage==1&&tool==MOVE&&mode==SECTORS)previewMove();invalidate();
+    }
+    @Override public void pointerPan(float dx,float dy){if(cell<=0)return;follow=false;viewX+=dx/cell;viewY-=dy/cell;invalidate();}
+    @Override public void pointerZoom(float steps,float x,float y){
+        if(cell<=0)return;float bx=wx(x),by=wy(y);zoom=Math.max(.3f,Math.min(4f,zoom*(float)Math.pow(1.25f,steps)));cell=(mapB()-mapT())/16f*zoom;
+        if(inMap(x,y)){viewX+=bx-wx(x);viewY+=by-wy(y);}follow=false;invalidate();}
+    @Override public void pointerShortcut(char k){if(k=='z')tap(H_UNDO);else if(k=='y')tap(H_REDO);else if(k=='s')tap(H_SAVE);invalidate();}
+    @Override public boolean pointerDpad(int dx,int dy){
+        if(Float.isNaN(Ui.hoverX)||!inMap(Ui.hoverX,Ui.hoverY))return false;
+        cursorStep(dx>0?1:dx<0?3:dy<0?0:2);return true;}
     private void cursorStep(int direction){
-        float s=snap();
+        float s=snap();follow=true;
         if(direction==0)cursorY+=s;if(direction==1)cursorX+=s;if(direction==2)cursorY-=s;if(direction==3)cursorX-=s;
         cursorX=Math.max(-500,Math.min(500,MapEditor.snap(cursorX,s)));cursorY=Math.max(-500,Math.min(500,MapEditor.snap(cursorY,s)));
         if(stage==1&&tool==MOVE&&mode==SECTORS)previewMove();

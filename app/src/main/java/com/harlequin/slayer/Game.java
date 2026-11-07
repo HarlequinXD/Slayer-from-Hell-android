@@ -140,10 +140,10 @@ final class Game implements GLSurfaceView.Renderer {
      * second before he recovers; a brief red flash when hit otherwise.
      */
     private void glow(Demon d){
-        int gl=d.glow();float t=time*8+d.id;
+        int gl=glory!=null&&glory.d==d?0:d.glow();float t=time*8+d.id;   // the glow goes off once the glory kill starts
         if(gl==1){float k=.55f+.3f*(float)Math.sin(t);GLES30.glUniform4f(u(prog,"uGlow"),.25f,.55f,1f,k);}
         else if(gl==2){boolean on=((int)(time*10))%2==0;GLES30.glUniform4f(u(prog,"uGlow"),1f,.42f,.08f,on?1.1f:.25f);}
-        else GLES30.glUniform4f(u(prog,"uGlow"),1f,.25f,.15f,d.dead?0:d.hitFlash*.35f);
+        else GLES30.glUniform4f(u(prog,"uGlow"),1f,.25f,.15f,d.dead||(glory!=null&&glory.d==d)?0:d.hitFlash*.35f);
     }
     private static boolean far(Demon d,float[] eye){float dx=d.body.x-eye[0],dy=d.body.y-eye[1];return dx*dx+dy*dy>70*70;}
     /** The warden in her animated pose, then the shotgun in her hands and any shells in the chambers or her hand. */
@@ -206,19 +206,19 @@ final class Game implements GLSurfaceView.Renderer {
         Hud.Input in=hud.in;
         if(glory!=null){updateGlory(dt,in);return;}
         letterbox=Math.max(0,letterbox-dt*3);gloryCool-=dt;
-        float[] look=in.takeLook();boolean jump=in.takeJump()||(in.jumpHeld&&pl.onGround);
+        float[] look=in.takeLook();boolean jump=in.takeJump()||(in.jumping()&&pl.onGround);
         int ev=0;
-        pl.update(dt,level,in.moveX,in.moveY,look[0],invertLook?-look[1]:look[1],jump,lookSens);
+        pl.update(dt,level,in.mx(),in.my(),look[0],invertLook?-look[1]:look[1],jump,lookSens);
         if(pl.justJumped)sfx.play(Sfx.JUMP,.5f);
         if(pl.justLanded)sfx.play(Sfx.LAND,Math.min(1,pl.landSpeed/12));
         if(pl.hurtFlash>.99f&&(int)(time*4)%2==0)sfx.play(Sfx.SIZZLE,.4f);
         boolean rl=in.takeReload();
         // the chainsaw on a demon in reach: a glory kill
-        if(in.saw&&gloryCool<=0&&!completed){Glory g=Glory.tryStart(pl,enemies,level);if(g!=null){startGlory(g);return;}}
+        if(in.sawing()&&gloryCool<=0&&!completed){Glory g=Glory.tryStart(pl,enemies,level);if(g!=null){startGlory(g);return;}}
         Demon target=assistTarget();assistLock=target!=null;
-        if(target!=null&&in.fire)assistPull(dt,target);
-        fireCannon(dt,in.fire,target);
-        hero.update(dt,time,pl,level,pl.yaw,pl.viewPitch(),in.fire,in.saw,gun);
+        if(target!=null&&in.firing())assistPull(dt,target);
+        fireCannon(dt,in.firing(),target);
+        hero.update(dt,time,pl,level,pl.yaw,pl.viewPitch(),in.firing(),in.sawing(),gun);
         // walking into a wall: the animation layer recoils off it
         if(pl.bumpSpeed>0){sfx.play(Sfx.LAND,Math.min(1,pl.bumpSpeed/5)*.7f,1.2f);hero.bump(pl.bumpNx,pl.bumpNy,pl.bumpSpeed);}
         updateSaw(dt);
@@ -265,7 +265,7 @@ final class Game implements GLSurfaceView.Renderer {
         for(int k=0;k<2;k++){float ex=pl.x+fx.rnd(-12,12),ey=pl.y+fx.rnd(-12,12);Level.Cell c=level.atF(ex,ey);
             if(!c.solid&&c.lava)fx.spawn(Fx.ADD,ex,ey,c.floor+.05f,fx.rnd(-.2f,.2f),fx.rnd(-.2f,.2f),fx.rnd(.6f,1.6f),fx.rnd(1.2f,2.6f),fx.rnd(.012f,.025f),-.2f,.1f,.2f,1f,.4f,.08f,1);}
         fx.update(dt,level);bleed(dt);blood.update(dt,level);
-        gloryReady=in.saw?false:Glory.tryStart(pl,enemies,level)!=null;
+        gloryReady=in.sawing()?false:Glory.tryStart(pl,enemies,level)!=null;
         if(fx.updateShells(dt,level)>0)sfx.play(Sfx.TINK,.5f,.9f+fx.rng.nextFloat()*.3f);
         flash=Math.max(0,flash-dt);hint=Math.max(0,hint-dt);
         demonsLeft=enemies.alive();

@@ -26,7 +26,7 @@ final class Shaders {
         "uniform sampler2D uA;uniform sampler2D uB;uniform sampler2D uC;uniform sampler2D uMask;\n"+
         "uniform vec3 uCam;uniform float uPom;uniform float uEmit;uniform float uEnvK;uniform float uTime;uniform float uExposure;\n"+
         "uniform vec4 uL[16];uniform vec3 uLC[16];uniform int uLCount;uniform ivec2 uGrid;uniform vec2 uGridO;uniform float uGridS;\n"+
-        "uniform vec3 uSky;uniform vec3 uGround;uniform vec4 uFog;uniform float uPulse;uniform float uShadowK;\n"+
+        "uniform vec3 uSky;uniform vec3 uGround;uniform vec4 uFog;uniform float uPulse;uniform float uShadowK;uniform vec4 uGlow;\n"+
         "in vec3 vPos;in vec3 vN;in vec3 vT;in vec2 vUv;out vec4 fragColor;\n"+
         "const float PI=3.14159265;\n"+
         "vec3 aces(vec3 x){return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0);}\n"+
@@ -79,6 +79,7 @@ final class Shaders {
         " float cav=mix(1.0,0.55,surfDepth);\n"+
         " vec3 col=Lo*mix(1.0,ao,0.5)+amb*ao*cav;\n"+
         " col+=albedo*emis*uEmit*(0.75+0.25*sin(uTime*1.7+vPos.x*1.3+vPos.y*0.9))*uPulse+albedo*emis*uEmit*(1.0-uPulse);\n"+
+        " col+=uGlow.rgb*uGlow.a*(0.3+1.8*pow(1.0-NdV,2.0));\n"+   // stagger glow: a flat tint plus a bright rim
         " col=mix(col,uFog.rgb,1.0-exp(-dist*uFog.a));\n"+
         " col=aces(col*uExposure);fragColor=vec4(pow(col,vec3(1.0/2.2)),1.0);}\n";
 
@@ -95,6 +96,47 @@ final class Shaders {
         " float hole=1.0-smoothstep(0.12,0.2,r);float scorch=(1.0-smoothstep(edge*0.6,edge,r));\n"+
         " if(scorch<0.01)discard;float k=mix(1.0,0.35,scorch)*mix(1.0,0.08,hole);\n"+
         " float f=1.0-exp(-length(uCam-vPos)*uFog.a);k=mix(k,1.0,f);fragColor=vec4(vec3(k),1.0);}\n";
+
+    /**
+     * Blood stains, multiplied over the surface so they are lit and shadowed exactly like it. aUv is the position in
+     * the stain's frame in radii (x along the wall / east, y up the wall / north), aA = {seed, type*16 + run length,
+     * age, stretch}, aAng = the direction the droplet was travelling. The shape is stepped 8 times per radius.
+     */
+    static final String VS_BLOOD=
+        "#version 300 es\nlayout(location=0) in vec3 aPos;layout(location=1) in vec2 aUv;layout(location=2) in vec4 aA;layout(location=3) in float aAng;\n"+
+        "uniform mat4 uVP;out vec2 vUv;out vec4 vA;out float vAng;out vec3 vPos;\n"+
+        "void main(){vUv=aUv;vA=aA;vAng=aAng;vPos=aPos;gl_Position=uVP*vec4(aPos,1.0);}\n";
+    static final String FS_BLOOD=
+        "#version 300 es\nprecision highp float;in vec2 vUv;in vec4 vA;in float vAng;in vec3 vPos;uniform vec3 uCam;uniform vec4 uFog;out vec4 fragColor;\n"+
+        "float h(float n){return fract(sin(n*12.9898+4.1)*43758.5453);}\n"+
+        "void main(){float seed=vA.x;float type=floor(vA.y/16.0+0.01);float drip=vA.y-type*16.0;float age=vA.z;float st=vA.w;\n"+
+        " vec2 q=floor(vUv*8.0)/8.0+0.0625;\n"+
+        " float c=cos(-vAng),s=sin(-vAng);vec2 p=vec2(q.x*c-q.y*s,q.x*s+q.y*c);vec2 b=vec2(p.x/st,p.y);\n"+
+        " float a=atan(b.y,b.x),d=length(b);float ins=0.0,core=1.0;\n"+
+        " float rr=type>1.5?0.92+0.07*sin(a*2.0+h(seed)*6.28)+0.05*sin(a*7.0+h(seed+3.0)*6.28)\n"+
+        "   :0.72+0.17*sin(a*3.0+h(seed)*6.28)+0.1*sin(a*5.0+h(seed+1.0)*6.28)+0.06*sin(a*11.0+h(seed+2.0)*6.28);\n"+
+        " if(d<rr){ins=1.0;core=d/rr;}\n"+
+        // satellite droplets: thrown ahead (+x) when it splashed at a grazing angle, all round when it hit head on
+        " if(type<1.5)for(int i=0;i<7;i++){float fi=float(i);float an=(h(seed+10.0+fi)-0.5)*mix(6.28,1.1,clamp(st-1.0,0.0,1.0));\n"+
+        "  float ds=1.0+h(seed+20.0+fi)*(0.5+0.7*st);vec2 cc=vec2(cos(an)*ds*st,sin(an)*ds);float r=0.05+0.11*h(seed+30.0+fi);\n"+
+        "  if(length(p-cc)<r){ins=1.0;core=0.8;}}\n"+
+        // runs down a wall, creeping further over the first seconds, each ending in a bead
+        " if(type>0.5&&type<1.5)for(int i=0;i<3;i++){float fi=float(i);if(h(seed+50.0+fi)>0.75)continue;\n"+
+        "  float x=(h(seed+40.0+fi)-0.5)*1.1;float w=0.05+0.06*h(seed+60.0+fi);\n"+
+        "  float len=drip*(0.35+0.65*h(seed+70.0+fi))*(1.0-exp(-age*(0.25+0.35*h(seed+80.0+fi))));\n"+
+        "  float y0=-0.5,y1=-(0.5+len);\n"+
+        "  if(q.y<y0&&q.y>y1&&abs(q.x-x)<w){ins=1.0;core=0.7;}\n"+
+        "  if(len>0.1&&length((q-vec2(x,y1))*vec2(1.0,1.3))<w*1.5){ins=1.0;core=0.45;}}\n"+
+        " if(ins<0.5)discard;\n"+
+        // fresh: a deep wet red, thinner (lighter) toward the edge, with a glossy spot; dried: brown with a dark rim
+        " float dry=smoothstep(6.0,35.0,age);\n"+
+        " vec3 col=mix(vec3(0.5,0.035,0.03),vec3(0.38,0.1,0.07),dry);\n"+
+        " col*=mix(1.0,1.55,smoothstep(0.55,1.0,core)*(1.0-dry));\n"+
+        " col*=mix(1.0,0.62,smoothstep(0.82,0.97,core)*dry);\n"+
+        " if(type>1.5)col*=0.8;\n"+
+        " vec2 g=b-vec2(-0.25,0.25);if(dot(g,g)<0.02&&core<0.9)col=mix(col,vec3(0.95,0.75,0.7),0.35*(1.0-dry));\n"+
+        " float f=1.0-exp(-length(uCam-vPos)*uFog.a);col=mix(col,vec3(1.0),f);\n"+
+        " fragColor=vec4(clamp(col,0.0,1.0),1.0);}\n";
 
     /** Particles: camera-facing quads, colour per vertex, a soft round or star-shaped sprite. */
     static final String VS_PART=

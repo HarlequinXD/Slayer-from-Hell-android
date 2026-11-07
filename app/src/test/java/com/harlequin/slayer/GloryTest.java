@@ -17,9 +17,12 @@ public class GloryTest {
                     float[] w=L.ray(x,y,f+1.2f,-(float)Math.cos(a),-(float)Math.sin(a),0,1.6f);if(w!=null)continue;
                     p.x=x;p.y=y;p.z=f;p.yaw=a+(float)Math.PI;found=dm;}
                 if(found!=null)break;}
-            d=found;hero.bodyYaw=p.yaw;
+            d=found;hero.bodyYaw=p.yaw;if(d!=null)stagger(d);
             for(int i=0;i<30;i++){t+=DT;p.update(DT,L,0,0,0,0,false,0);hero.update(DT,t,p,L,p.yaw,0,false,false,gun);for(Demon dm:E.demons)dm.pose(DT,t,L);}}
     }
+
+    /** Shot down to a quarter health: he staggers. */
+    static void stagger(Demon d){d.damage(Demon.MAX_HEALTH-Demon.STAGGER_HEALTH+1,1,0);}
 
     @Test public void playsThroughWithEveryBeatInOrderAndKills(){
         Scene s=new Scene();assertNotNull("a demon with room around him",s.d);
@@ -66,10 +69,25 @@ public class GloryTest {
     @Test public void needsTheDemonInFrontAndInReach(){
         Scene s=new Scene();
         s.p.yaw+=(float)Math.PI;assertNull("not behind her",Glory.tryStart(s.p,s.E,s.L));
-        s.p.yaw-=(float)Math.PI;s.d.dead=true;assertNull("not a corpse",Glory.tryStart(s.p,s.E,s.L));
+        s.p.yaw-=(float)Math.PI;
+        Demon fresh=s.d;fresh.reset(s.L);assertFalse(fresh.staggered());assertNull("not a demon at full fight",Glory.tryStart(s.p,s.E,s.L));stagger(fresh);
+        s.d.dead=true;assertNull("not a corpse",Glory.tryStart(s.p,s.E,s.L));
         s.d.dead=false;float ux=s.d.body.x-s.p.x,uy=s.d.body.y-s.p.y,l=(float)Math.hypot(ux,uy);
         s.p.x=s.d.body.x-ux/l*(Glory.REACH+.6f);s.p.y=s.d.body.y-uy/l*(Glory.REACH+.6f);
         Glory g=Glory.tryStart(s.p,s.E,s.L);assertTrue("not out of reach",g==null||g.d!=s.d);
+    }
+    @Test public void staggerWindowGlowsThenRecovers(){
+        AiTest.World w=new AiTest.World();Demon d=w.E.demons.get(0);
+        for(int i=0;i<14;i++)d.damage(Enemies.BOLT_DAMAGE,1,0);
+        assertFalse("14 pistol shots leave him fighting: "+d.health,d.staggered());
+        d.damage(Enemies.BOLT_DAMAGE,1,0);assertTrue("the 15th puts him down to a quarter: he staggers",d.staggered());assertEquals(1,d.glow());
+        float x=d.body.x,y=d.body.y;int frames=0;boolean warned=false;
+        while(d.staggered()&&frames<600){w.run(1,0);frames++;if(d.glow()==2)warned=true;}
+        float secs=frames/60f;System.out.printf("stagger lasted %.2f s, moved %.2f m%n",secs,(float)Math.hypot(d.body.x-x,d.body.y-y));
+        assertEquals("the stagger lasts its window",Demon.STAGGER_TIME,secs,.1f);assertTrue("it flashes a warning before it ends",warned);
+        assertTrue("he reels on the spot",Math.hypot(d.body.x-x,d.body.y-y)<.5f);
+        assertTrue("he shakes it off with some health back",d.health>=Demon.RECOVER_HEALTH&&!d.dead);
+        d.damage(d.health-Demon.STAGGER_HEALTH+1,1,0);assertTrue("staggers again",d.staggered());d.damage(d.health,1,0);assertTrue("shooting a staggered demon still kills him",d.dead);
     }
     @Test public void keyframesHitTheirKeysAndStayInRange(){
         float[] T={0,1,2},V={0,1,-1};

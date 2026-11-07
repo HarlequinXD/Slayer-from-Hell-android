@@ -8,7 +8,7 @@ import java.util.ArrayList;
  * hits on her, deaths) for the game to turn into sound and effects. Pure Java, so the AI runs in the unit tests.
  */
 final class Enemies {
-    static final int EV_ROAR=0,EV_CHARGE=1,EV_SHOOT=2,EV_EXPLODE=3,EV_HIT_PLAYER=4,EV_PAIN=5,EV_DIE=6,EV_STEP=7,EV_HIT=8,EV_BOLT_HIT=9,EV_BOLT_BURST=10;
+    static final int EV_ROAR=0,EV_CHARGE=1,EV_SHOOT=2,EV_EXPLODE=3,EV_HIT_PLAYER=4,EV_PAIN=5,EV_DIE=6,EV_STEP=7,EV_HIT=8,EV_BOLT_HIT=9,EV_BOLT_BURST=10,EV_STAGGER=11;
     /** An event at a position (for sound and effects); demon = index or -1. */
     static final class Event {final int type,demon;final float x,y,z,dx,dy,dz;Event(int t,int d,float x,float y,float z,float dx,float dy,float dz){type=t;demon=d;this.x=x;this.y=y;this.z=z;this.dx=dx;this.dy=dy;this.dz=dz;}}
     static final class Fireball {float x,y,z,vx,vy,vz,life;int owner;boolean alive=true;}
@@ -21,10 +21,11 @@ final class Enemies {
     private final java.util.Random rng=new java.util.Random(99);
     /** Doom's zombieman shot: 3-15 (3 x 1d5). */
     int shotDamage(){return 3*(1+rng.nextInt(5));}
-    /** Doom's plasma: 5-40 (5 x 1d8). */
-    int plasmaDamage(){return 5*(1+rng.nextInt(8));}
-    /** Doom's chainsaw bite: 2-20 (2 x 1d10). */
-    int sawDamage(){return 2*(1+rng.nextInt(10));}
+    /** Her hand cannon hits like Doom (2016)'s EMG pistol: 20 per shot. */
+    static final int BOLT_DAMAGE=20;
+    int plasmaDamage(){return BOLT_DAMAGE;}
+    /** A chainsaw bite (every 4 tics) on a demon that isn't staggered yet: 20, so the saw softens him up for a glory kill. */
+    int sawDamage(){return 20;}
     final Level L;final Nav nav;final Player player;
     final ArrayList<Demon> demons=new ArrayList<>();
     final ArrayList<Fireball> fireballs=new ArrayList<>();

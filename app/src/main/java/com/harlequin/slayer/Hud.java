@@ -93,7 +93,10 @@ final class Hud extends View {
         else{p.setColor(0x26ffffff);c.drawCircle(dp*120,h-dp*110,dp*60,p);text(c,"MOVE",dp*120,h-dp*106,11,0x70ffffff,Paint.Align.CENTER);}
         // buttons
         button(c,fireX(),fireY(),fireR(),"FIRE",in.fire,0xffd2401a);
-        button(c,sawX(),sawY(),sawR(),"SAW",in.saw,0xffd39a12);
+        if(game.gloryReady){float pulse=.5f+.5f*(float)Math.sin(System.nanoTime()/1e9*12);   // a staggered demon in reach: GLORY KILL
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp*(3+3*pulse));p.setColor(((int)(120+120*pulse)<<24)|0xff7a1a);c.drawCircle(sawX(),sawY(),sawR()+dp*(6+5*pulse),p);p.setStyle(Paint.Style.FILL);
+            button(c,sawX(),sawY(),sawR(),"GLORY",true,0xffff6a10);text(c,"GLORY KILL",sawX(),sawY()-sawR()-dp*14,13,0xffffb070,Paint.Align.CENTER);}
+        else button(c,sawX(),sawY(),sawR(),"SAW",in.saw,0xffd39a12);
         button(c,jumpX(),jumpY(),smallR(),"JUMP",in.jumpHeld,0xff7a7a80);
         // ammo: the cannon's energy cells, as a number and a charge bar
         float ax=w-dp*24,ay=dp*38;boolean empty=game.ammo==0;

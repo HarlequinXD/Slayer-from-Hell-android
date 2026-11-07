@@ -41,10 +41,10 @@ final class Glory {
         px=pl.x;py=pl.y;pz=pl.z;dx=dx0;dy=dy0;dz=d.body.z;herYaw=(float)Math.atan2(uy,ux);himYaw=herYaw+(float)Math.PI;
     }
 
-    /** A living demon in reach in front of her, with room to stage the kill: the glory kill, or null. */
+    /** A staggered demon in reach in front of her, with room to stage the kill: the glory kill, or null. */
     static Glory tryStart(Player pl,Enemies E,Level L){
         float fx=(float)Math.cos(pl.yaw),fy=(float)Math.sin(pl.yaw);Demon best=null;float bestD=REACH;
-        for(Demon d:E.demons){if(d.dead)continue;
+        for(Demon d:E.demons){if(!d.staggered())continue;   // like Doom (2016): only a staggered, glowing demon
             float ex=d.body.x-pl.x,ey=d.body.y-pl.y,dist=(float)Math.hypot(ex,ey);
             if(dist>bestD||dist<1e-3f||Math.abs(d.body.z-pl.z)>.7f)continue;
             if((ex*fx+ey*fy)/dist<CONE)continue;

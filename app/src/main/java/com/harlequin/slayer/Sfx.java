@@ -9,7 +9,8 @@ import java.util.Random;
 
 /** Sound effects synthesised at start-up (no audio files): written as WAVs to the cache and played with SoundPool. */
 final class Sfx {
-    static final int BLAST=0,PUMP_BACK=1,PUMP_FWD=2,SHELL_IN=3,TINK=4,DRY=5,STEP=6,LAND=7,SIZZLE=8,DRONE=9,JUMP=10,ENGINE=11,GRIND=12,COUNT=13;
+    static final int BLAST=0,PUMP_BACK=1,PUMP_FWD=2,SHELL_IN=3,TINK=4,DRY=5,STEP=6,LAND=7,SIZZLE=8,DRONE=9,JUMP=10,ENGINE=11,GRIND=12,
+        ROAR=13,CHARGE=14,FIREBALL=15,EXPLODE=16,PAIN=17,DIE=18,HIT=19,COUNT=20;
     private static final int RATE=44100;
     private final SoundPool pool;private final int[] ids=new int[COUNT];private final boolean[] ready=new boolean[COUNT];
     private final Random rng=new Random(3);private int droneStream,engineStream;private float engVol=.2f,engRate=.6f;
@@ -64,6 +65,28 @@ final class Sfx {
                 int fade=RATE/200;for(int i=0;i<fade;i++){float k=i/(float)fade;a[a.length-1-i]=a[a.length-1-i]*k+a[i]*(1-k);}return a;}
             case GRIND:{float[] a=new float[(int)(RATE*.22f)];float hp=0,prev=0;for(int i=0;i<a.length;i++){float t=i/(float)RATE;float n=rng.nextFloat()*2-1;hp=.92f*(hp+n-prev);prev=n;
                 float env=Math.min(1,t/.01f)*(float)Math.exp(-t*9);a[i]=(hp*.6f+(float)Math.sin(2*Math.PI*1900*t+3*Math.sin(2*Math.PI*37*t))*.35f+(float)Math.sin(2*Math.PI*3100*t)*.2f)*env*.8f;}return a;}
+            case ROAR:{   // a demon's roar: a growling, pitch-falling buzz through a throaty formant, with breath noise
+                float[] a=new float[(int)(RATE*1.1f)];float ph=0,lp=0,bp=0,bv=0;
+                for(int i=0;i<a.length;i++){float t=i/(float)RATE;float f=95-35*t+8*(float)Math.sin(2*Math.PI*7*t);ph+=f/RATE;float buzz=(ph%1f)*2-1;
+                    float rough=1+.5f*(rng.nextFloat()*2-1)*(float)Math.sin(2*Math.PI*31*t);float x=buzz*rough+(rng.nextFloat()*2-1)*.35f;
+                    float fc=2*(float)Math.sin(Math.PI*(520-140*t)/RATE);bp+=fc*bv;bv+=fc*(x-bp-.35f*bv);lp+=(x-lp)*.12f;
+                    float env=Math.min(1,t/.08f)*(t>.75f?Math.max(0,(1.1f-t)/.35f):1);a[i]=(bp*.5f+lp*.6f)*env*.8f;}
+                reverb(a,.3f);return a;}
+            case CHARGE:{float[] a=new float[(int)(RATE*.65f)];float ph=0;for(int i=0;i<a.length;i++){float t=i/(float)RATE;float f=300+1500*t*t;ph+=f/RATE;
+                a[i]=((float)Math.sin(2*Math.PI*ph)*.4f+(float)Math.sin(4*Math.PI*ph)*.15f+(rng.nextFloat()*2-1)*.06f)*Math.min(1,t/.1f)*.55f;}return a;}
+            case FIREBALL:{float[] a=new float[(int)(RATE*.7f)];float lp=0,lp2=0;for(int i=0;i<a.length;i++){float t=i/(float)RATE;float n=rng.nextFloat()*2-1;
+                float cut=.04f+.25f*(float)Math.exp(-t*6);lp+=(n-lp)*cut;lp2+=(lp-lp2)*cut;float thump=(float)Math.sin(2*Math.PI*(70+90*Math.exp(-t*20))*t)*(float)Math.exp(-t*10);
+                a[i]=(lp2*2.2f*(float)Math.exp(-t*3.5f)+thump*.6f+(float)Math.sin(2*Math.PI*(900-600*t)*t)*.12f*(float)Math.exp(-t*8))*Math.min(1,t/.005f)*.8f;}return a;}
+            case EXPLODE:{float[] a=new float[(int)(RATE*1.2f)];float lp=0,lp2=0;for(int i=0;i<a.length;i++){float t=i/(float)RATE;float n=rng.nextFloat()*2-1;
+                float cut=Math.max(.015f,.6f*(float)Math.exp(-t*10));lp+=(n-lp)*cut;lp2+=(lp-lp2)*cut;float boom=(float)Math.sin(2*Math.PI*(45+40*Math.exp(-t*25))*t)*(float)Math.exp(-t*6);
+                float crackle=rng.nextFloat()>.995f-.01f*(float)Math.exp(-t*4)?(rng.nextFloat()*2-1)*.6f:0;
+                a[i]=(lp2*2f*(float)Math.exp(-t*4)+boom*.9f+crackle*(float)Math.exp(-t*3))*.85f;}reverb(a,.4f);return a;}
+            case PAIN:{float[] a=new float[(int)(RATE*.45f)];float ph=0,lp=0;for(int i=0;i<a.length;i++){float t=i/(float)RATE;float f=150-60*t;ph+=f/RATE;float buzz=(ph%1f)*2-1;
+                lp+=(buzz+(rng.nextFloat()*2-1)*.4f-lp)*.2f;a[i]=lp*Math.min(1,t/.02f)*(float)Math.exp(-t*5)*.9f;}return a;}
+            case DIE:{float[] a=new float[(int)(RATE*1.6f)];float ph=0,lp=0;for(int i=0;i<a.length;i++){float t=i/(float)RATE;float f=120*(float)Math.exp(-t*.9f)+25;ph+=f/RATE;float buzz=(ph%1f)*2-1;
+                lp+=(buzz*(1+.6f*(rng.nextFloat()*2-1))-lp)*.1f;float clank=t>1.0f&&t<1.4f?(float)Math.sin(2*Math.PI*620*t)*(float)Math.exp(-(t-1f)*14)*.5f+(rng.nextFloat()*2-1)*(float)Math.exp(-(t-1f)*30)*.6f:0;
+                a[i]=(lp*Math.min(1,t/.05f)*(t<1?1:(float)Math.exp(-(t-1)*6))+clank)*.85f;}reverb(a,.3f);return a;}
+            case HIT:{float[] a=clack(.12f,900,.8f,1700);for(int i=0;i<a.length;i++){float t=i/(float)RATE;a[i]+=(float)Math.sin(2*Math.PI*110*t)*(float)Math.exp(-t*30)*.5f;}return a;}
             default:return new float[100];
         }
     }

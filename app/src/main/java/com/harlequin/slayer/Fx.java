@@ -32,6 +32,32 @@ final class Fx {
             float c=wood?.35f:.25f;spawn(SMOKE,x,y,z,d[0]*s,d[1]*s,d[2]*s,rnd(.3f,.6f),rnd(.012f,.02f),0,-9.8f,.2f,c*(wood?1.2f:1),c*(wood?.75f:1),c*(wood?.45f:1),1);}
     }
     private float[] jitter(float nx,float ny,float nz,float k){float x=nx+rnd(-k,k),y=ny+rnd(-k,k),z=nz+rnd(-k,k)+.2f;float l=(float)Math.sqrt(x*x+y*y+z*z);return new float[]{x/l,y/l,z/l};}
+    /** A pellet or the saw hitting a demon: sparks off the red armour and dark blood spatter. */
+    void blood(float x,float y,float z,float dx,float dy,float dz){
+        for(int k=0;k<6;k++){float s=rnd(1.5f,5);float[] d=jitter(-dx,-dy,-dz,.8f);spawn(ADD,x,y,z,d[0]*s,d[1]*s,d[2]*s,rnd(.1f,.25f),rnd(.01f,.02f),-.5f,-9f,.5f,1f,.55f,.2f,1);}
+        for(int k=0;k<7;k++){float s=rnd(.6f,2.6f);float[] d=jitter(-dx,-dy,-dz,.9f);spawn(SMOKE,x,y,z,d[0]*s,d[1]*s,d[2]*s+.4f,rnd(.35f,.7f),rnd(.015f,.03f),.2f,-9.8f,.3f,.28f,.015f,.01f,1);}
+        spawn(SMOKE,x,y,z,0,0,.1f,rnd(.4f,.7f),rnd(.06f,.1f),.5f,0,1,.18f,.01f,.008f,.7f);
+    }
+    /** One frame of a fireball in flight: a hot blue core and a crackling trail. */
+    void fireball(float x,float y,float z,float vx,float vy,float vz){
+        spawn(ADD,x,y,z,0,0,0,.07f,rnd(.16f,.22f),-1.5f,0,0,.35f,.6f,1f,1);
+        spawn(ADD,x,y,z,0,0,0,.05f,rnd(.07f,.1f),-1f,0,0,.9f,.95f,1f,1);
+        for(int k=0;k<2;k++)spawn(ADD,x+rnd(-.05f,.05f),y+rnd(-.05f,.05f),z+rnd(-.05f,.05f),-vx*.08f+rnd(-.4f,.4f),-vy*.08f+rnd(-.4f,.4f),-vz*.08f+rnd(-.2f,.6f),rnd(.2f,.4f),rnd(.04f,.08f),-.12f,.5f,1.5f,.15f,.4f,1f,.9f);
+        if(rng.nextFloat()<.3f)spawn(SMOKE,x,y,z,rnd(-.2f,.2f),rnd(-.2f,.2f),rnd(.1f,.4f),rnd(.4f,.8f),rnd(.04f,.07f),.3f,.1f,1,.1f,.12f,.2f,.35f);
+    }
+    /** A fireball bursting against a wall or her: a flash, a spray of blue sparks and smoke. */
+    void explosion(float x,float y,float z,float nx,float ny,float nz){
+        spawn(STAR,x,y,z,0,0,0,.12f,rnd(.55f,.7f),2.5f,0,0,.5f,.75f,1f,1);
+        spawn(ADD,x,y,z,0,0,0,.25f,.4f,1.6f,0,0,.25f,.5f,1f,1);
+        for(int k=0;k<26;k++){float s=rnd(2,8);float[] d=jitter(nx,ny,nz,1.1f);spawn(ADD,x,y,z,d[0]*s,d[1]*s,d[2]*s,rnd(.2f,.55f),rnd(.012f,.03f),-.4f,-6f,.8f,.4f,.7f,1f,1);}
+        for(int k=0;k<8;k++){float s=rnd(.3f,1.4f);float[] d=jitter(nx,ny,nz,1f);spawn(SMOKE,x,y,z,d[0]*s,d[1]*s,d[2]*s+.3f,rnd(.9f,1.8f),rnd(.12f,.2f),.5f,.15f,1.8f,.12f,.13f,.18f,.5f);}
+    }
+    /** The cannon charging: blue motes drawn into the muzzle. */
+    void charge(float x,float y,float z,float k){
+        if(rng.nextFloat()>k)return;float dx=rnd(-.25f,.25f),dy=rnd(-.25f,.25f),dz=rnd(-.25f,.25f);
+        spawn(ADD,x+dx,y+dy,z+dz,-dx*4,-dy*4,-dz*4,.22f,rnd(.015f,.03f),-.05f,0,0,.3f,.6f,1f,1);
+        if(rng.nextFloat()<.4f)spawn(ADD,x,y,z,0,0,0,.05f,.05f+.07f*k,-.5f,0,0,.3f,.55f,1f,1);
+    }
     /** Muzzle flash and smoke at the barrel's end, along direction d. */
     void muzzle(float x,float y,float z,float dx,float dy,float dz){
         spawn(STAR,x,y,z,dx*.5f,dy*.5f,dz*.5f,.055f,rnd(.22f,.3f),1.5f,0,0,1f,.75f,.4f,1);

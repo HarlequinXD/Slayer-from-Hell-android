@@ -53,7 +53,7 @@ final class Shaders {
         " float a2=rough*rough;a2*=a2;float kG=(rough+1.0)*(rough+1.0)/8.0;\n"+
         // ---- which lights this cell can see (baked visibility)
         " ivec2 cell=clamp(ivec2(floor(vPos.xy+N.xy*0.06)),ivec2(0),uGrid-1);vec2 mk=texelFetch(uMask,cell,0).rg;\n"+
-        " int bits=int(mk.r*255.0+0.5)|(int(mk.g*255.0+0.5)<<8);bits|=1<<15;\n"+
+        " int bits=int(mk.r*255.0+0.5)|(int(mk.g*255.0+0.5)<<8);bits|=7<<13;\n"+
         " vec3 Lo=vec3(0.0);int shadowBudget=2;\n"+
         " for(int i=0;i<16;i++){if(i>=uLCount)break;if(((bits>>i)&1)==0)continue;\n"+
         "  vec3 Ld=uL[i].xyz-vPos;float d=length(Ld);float r=uL[i].w;if(d>r)continue;Ld/=d;\n"+

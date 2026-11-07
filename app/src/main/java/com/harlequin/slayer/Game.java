@@ -1,6 +1,7 @@
 package com.harlequin.slayer;
 
 import android.content.Context;
+import java.util.ArrayList;
 import android.opengl.GLES30;
 import android.opengl.GLSurfaceView;
 import java.util.concurrent.ExecutorService;
@@ -12,11 +13,11 @@ import javax.microedition.khronos.opengles.GL10;
 /** The game: update loop, the third-person camera, and OpenGL ES 3 rendering of the level, effects, the warden and her shotgun. */
 final class Game implements GLSurfaceView.Renderer {
     private final Context ctx;Hud hud;Sfx sfx;
-    final Level level=new Level();final Player pl=new Player();final Gun gun=new Gun();final Fx fx=new Fx();final Hero hero=new Hero();
+    final Level level=new Level();final Player pl=new Player();final Gun gun=new Gun();final Fx fx=new Fx();final Hero hero=new Hero();final Enemies enemies;private int lastDeaths;
     // HUD state (read by the UI thread)
-    volatile String loading="Forging materials…";volatile float progress;volatile int ammo,reserve,fps;volatile float health=100,hurt,spread,hint=6;volatile boolean reloading,hasGun=true;
+    volatile String loading="Forging materials…";volatile float progress;volatile int ammo,reserve,fps;volatile float health=100,hurt,spread,hint=6;volatile boolean reloading,hasGun=true;volatile int demonsLeft,demonsTotal;
 
-    Game(Context c){ctx=c;pl.spawn(level);hero.bodyYaw=pl.yaw;}
+    Game(Context c){ctx=c;pl.spawn(level);hero.bodyYaw=pl.yaw;enemies=new Enemies(level,pl);demonsTotal=enemies.demons.size();}
 
     // ------------------------------------------------------------------ GL resources
     private int prog,progDecal,progPart;
@@ -35,7 +36,7 @@ final class Game implements GLSurfaceView.Renderer {
         prog=Gfx.program(Shaders.VS_PBR,Shaders.FS_PBR);progDecal=Gfx.program(Shaders.VS_DECAL,Shaders.FS_DECAL);progPart=Gfx.program(Shaders.VS_PART,Shaders.FS_PART);uni.clear();
         java.util.ArrayList<float[]>[] geo=level.build();levelMesh=new Gfx.Mesh[Tex.COUNT];for(int i=0;i<Tex.COUNT;i++)levelMesh[i]=new Gfx.Mesh(geo[i].get(0));
         float[][] g=Gun.build();parts=new Gfx.Mesh[g.length];for(int i=0;i<g.length;i++)parts[i]=g[i]==null?null:new Gfx.Mesh(g[i]);
-        loadBakedGun();loadHero();loadSaw();
+        loadBakedGun();loadHero();loadSaw();loadDemon();
         maskTex=Gfx.maskTexture(level.lightMask,level.W,level.H);
         decalStream=new Gfx.Stream(3,2,1);partStream=new Gfx.Stream(3,2,4);
         for(int i=0;i<Tex.COUNT;i++)tex[i]=null;
@@ -91,6 +92,35 @@ final class Game implements GLSurfaceView.Renderer {
             chainTex=new int[]{asset("chain_a.png",true,true),asset("chain_b.png",false,true),asset("chain_c.png",false,true)};
         }catch(Exception e){throw new RuntimeException("baked chainsaw: "+e);}
     }
+    // ------------------------------------------------------------------ the demons (same rig as the warden) and their hand cannons
+    private Gfx.Mesh[] demonParts;private int[] demonTex,cannonTex;private float demonPom,cannonPom;private Gfx.Mesh cannonMesh;
+    private void loadDemon(){
+        try(java.io.InputStream in=ctx.getAssets().open("demon.bin")){
+            java.nio.ByteBuffer b=java.nio.ByteBuffer.wrap(readAll(in)).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            if(b.getInt()!=0x4e554753)throw new RuntimeException("demon.bin");demonPom=b.getFloat();int groups=b.getInt();
+            demonParts=new Gfx.Mesh[groups];
+            for(int g=0;g<groups;g++){int n=b.getInt();if(n==0)continue;float[] v=new float[n*11];for(int i=0;i<v.length;i++)v[i]=b.getFloat();demonParts[g]=new Gfx.Mesh(v);}
+            demonTex=new int[]{asset("demon_a.png",true),asset("demon_b.png",false),asset("demon_c.png",false)};
+        }catch(Exception e){throw new RuntimeException("baked demon: "+e);}
+        try(java.io.InputStream in=ctx.getAssets().open("cannon.bin")){
+            java.nio.ByteBuffer b=java.nio.ByteBuffer.wrap(readAll(in)).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            if(b.getInt()!=0x4e554753)throw new RuntimeException("cannon.bin");cannonPom=b.getFloat();b.getInt();
+            int n=b.getInt();float[] v=new float[n*11];for(int i=0;i<v.length;i++)v[i]=b.getFloat();cannonMesh=new Gfx.Mesh(v);
+            cannonTex=new int[]{asset("cannon_a.png",true),asset("cannon_b.png",false),asset("cannon_c.png",false)};
+        }catch(Exception e){throw new RuntimeException("baked cannon: "+e);}
+    }
+    /** Every demon in its pose (scaled about its hooves, or toppling when dead), then the hand cannons (the core glows brighter while charging). */
+    private void drawDemons(float[] eye){
+        for(int k=0;k<3;k++){GLES30.glActiveTexture(GLES30.GL_TEXTURE0+k);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,demonTex[k]);}
+        GLES30.glUniform1f(u(prog,"uPom"),demonPom*.35f);GLES30.glUniform1f(u(prog,"uEmit"),5f);
+        for(Demon d:enemies.demons){if(d.rig.mat[Hero.P_HEAD]==null||far(d,eye))continue;
+            for(int p=0;p<demonParts.length&&p<Hero.PARTS;p++){if(demonParts[p]==null||d.rig.mat[p]==null)continue;model(M.mul(d.world,d.rig.mat[p]));demonParts[p].draw();}}
+        for(int k=0;k<3;k++){GLES30.glActiveTexture(GLES30.GL_TEXTURE0+k);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,cannonTex[k]);}
+        GLES30.glUniform1f(u(prog,"uPom"),cannonPom);
+        for(Demon d:enemies.demons){if(d.rig.sawMat==null||far(d,eye))continue;
+            GLES30.glUniform1f(u(prog,"uEmit"),d.dead?Math.max(0,3-d.deathT*2):3+d.charge*9);model(M.mul(d.world,d.rig.sawMat));cannonMesh.draw();}
+    }
+    private static boolean far(Demon d,float[] eye){float dx=d.body.x-eye[0],dy=d.body.y-eye[1];return dx*dx+dy*dy>70*70;}
     /** The warden in her animated pose, then the shotgun in her hands and any shells in the chambers or her hand. */
     private void drawPlayer(){
         for(int k=0;k<3;k++){GLES30.glActiveTexture(GLES30.GL_TEXTURE0+k);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,heroTex[k]);}
@@ -160,10 +190,12 @@ final class Game implements GLSurfaceView.Renderer {
         if(pl.bumpSpeed>0){sfx.play(Sfx.LAND,Math.min(1,pl.bumpSpeed/5)*.7f,1.2f);hero.bump(pl.bumpNx,pl.bumpNy,pl.bumpSpeed);}
         updateSaw(dt);
         if(hero.steps>0&&pl.onGround)sfx.play(Sfx.STEP,.3f+.15f*hero.run,.9f+fx.rng.nextFloat()*.2f);
+        if(pl.deaths!=lastDeaths){lastDeaths=pl.deaths;enemies.reset();}   // she died: the keep starts over
+        enemies.update(dt,time);demonEvents();
         updateCamera(dt);
         float[] f=camF,right=camR,up=camU;float[] E=hero.eyeFrame;
         if((ev&Gun.EV_FIRE)!=0){
-            sfx.play(Sfx.BLAST,1f);flash=.07f;pl.kickVel+=1.6f;
+            sfx.play(Sfx.BLAST,1f);flash=.07f;pl.kickVel+=1.6f;enemies.hear(pl.x,pl.y,pl.z,32);boolean struck=false;
             // the crosshair picks the aim point; the pellets leave the muzzle toward it
             float[] mz=M.pt(E,gun.muzzleCam);
             float[] aimHit=level.ray(camPos[0],camPos[1],camPos[2],f[0],f[1],f[2],80);
@@ -174,8 +206,13 @@ final class Game implements GLSurfaceView.Renderer {
                 float a=fx.rng.nextFloat()*6.2832f,rr=(float)Math.sqrt(fx.rng.nextFloat())*.05f;
                 float[] d=Model.norm(new float[]{dir[0]+r2[0]*(float)Math.cos(a)*rr+u2[0]*(float)Math.sin(a)*rr,dir[1]+r2[1]*(float)Math.cos(a)*rr+u2[1]*(float)Math.sin(a)*rr,dir[2]+r2[2]*(float)Math.cos(a)*rr+u2[2]*(float)Math.sin(a)*rr});
                 float[] hit=level.ray(mz[0],mz[1],mz[2],d[0],d[1],d[2],70);
-                if(hit!=null){fx.impact(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5],(int)hit[7]);if((int)hit[7]!=Tex.LAVA&&(int)hit[7]!=Tex.LIGHT)fx.hole(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5]);}}
+                float[] dh=enemies.ray(mz[0],mz[1],mz[2],d[0],d[1],d[2],hit!=null?hit[6]:70);
+                if(dh!=null){   // a demon is nearer than the wall: damage falls off with range, head shots double
+                    Demon dm=enemies.demons.get((int)dh[1]);float dmg=11f*Math.max(.35f,Math.min(1,1.35f-dh[0]/18f))*(dh[2]>0?2:1);dm.damage(dmg,d[0],d[1]);
+                    fx.blood(mz[0]+d[0]*dh[0],mz[1]+d[1]*dh[0],mz[2]+d[2]*dh[0],d[0],d[1],d[2]);struck=true;}
+                else if(hit!=null){fx.impact(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5],(int)hit[7]);if((int)hit[7]!=Tex.LAVA&&(int)hit[7]!=Tex.LIGHT)fx.hole(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5]);}}
             float[] gf=Model.norm(M.dir(M.mul(E,gun.mat[Gun.P_ACTION]),new float[]{1,0,0}));fx.muzzle(mz[0],mz[1],mz[2],gf[0],gf[1],gf[2]);
+            if(struck)sfx.play(Sfx.HIT,.9f,.9f+fx.rng.nextFloat()*.2f);
         }
         if((ev&Gun.EV_OPEN)!=0)sfx.play(Sfx.PUMP_BACK,.8f,.8f);
         if((ev&Gun.EV_CLOSE)!=0)sfx.play(Sfx.PUMP_FWD,.9f,.75f);
@@ -194,8 +231,41 @@ final class Game implements GLSurfaceView.Renderer {
         fx.update(dt,level);
         if(fx.updateShells(dt,level)>0)sfx.play(Sfx.TINK,.5f,.9f+fx.rng.nextFloat()*.3f);
         flash=Math.max(0,flash-dt);hint=Math.max(0,hint-dt);
+        demonsLeft=enemies.alive();
         hasGun=hero.hasGun;ammo=hero.hasGun?gun.ammo():0;reserve=gun.reserve;health=pl.health;hurt=pl.hurtFlash;reloading=gun.reloading();spread=gun.recoilNow;
     }
+    // ------------------------------------------------------------------ the demons' events: sounds, effects, lights
+    private final ArrayList<float[]> flashes=new ArrayList<>();   // x,y,z,time left (explosion light)
+    private float vol(float x,float y,float z){float d=(float)Math.sqrt((x-pl.x)*(x-pl.x)+(y-pl.y)*(y-pl.y)+(z-pl.z)*(z-pl.z));return Math.max(0,1-d/32f);}
+    private void demonEvents(){
+        for(Enemies.Event e:enemies.events){float v=vol(e.x,e.y,e.z);
+            switch(e.type){
+                case Enemies.EV_ROAR:sfx.play(Sfx.ROAR,.9f*v,.85f+fx.rng.nextFloat()*.3f);break;
+                case Enemies.EV_CHARGE:sfx.play(Sfx.CHARGE,.6f*v);break;
+                case Enemies.EV_SHOOT:sfx.play(Sfx.FIREBALL,.9f*v);fx.spawn(Fx.STAR,e.x,e.y,e.z,e.dx,e.dy,e.dz,.08f,.32f,2,0,0,.4f,.7f,1f,1);flashes.add(new float[]{e.x,e.y,e.z,.08f});break;
+                case Enemies.EV_EXPLODE:sfx.play(Sfx.EXPLODE,.9f*v);fx.explosion(e.x,e.y,e.z,e.dx,e.dy,e.dz);flashes.add(new float[]{e.x,e.y,e.z,.3f});break;
+                case Enemies.EV_HIT_PLAYER:sfx.play(Sfx.EXPLODE,.9f,1.2f);sfx.play(Sfx.SIZZLE,.6f);fx.explosion(e.x,e.y,e.z,e.dx,e.dy,e.dz);flashes.add(new float[]{e.x,e.y,e.z,.25f});pl.kickVel-=2.5f;break;
+                case Enemies.EV_PAIN:sfx.play(Sfx.PAIN,.9f*v,.85f+fx.rng.nextFloat()*.3f);break;
+                case Enemies.EV_DIE:sfx.play(Sfx.DIE,v);break;
+                case Enemies.EV_STEP:if(v>.2f)sfx.play(Sfx.STEP,.35f*v,.7f+fx.rng.nextFloat()*.15f);break;
+            }}
+        enemies.events.clear();
+        for(Enemies.Fireball f:enemies.fireballs)fx.fireball(f.x,f.y,f.z,f.vx,f.vy,f.vz);
+        for(Demon d:enemies.demons)if(!d.dead&&d.charge>.2f){float[] m=d.muzzle();fx.charge(m[0],m[1],m[2],d.charge);}
+        for(float[] fl:flashes)fl[3]-=1/60f;flashes.removeIf(fl->fl[3]<=0);
+    }
+    /** The two brightest nearby dynamic blue lights (fireballs in flight, blasts) for light slots 13 and 14. */
+    private void dynamicLights(float[] eye){
+        float[][] cand=new float[enemies.fireballs.size()+flashes.size()][];int n=0;
+        for(Enemies.Fireball f:enemies.fireballs)cand[n++]=new float[]{f.x,f.y,f.z,1f};
+        for(float[] fl:flashes)cand[n++]=new float[]{fl[0],fl[1],fl[2],2.2f*Math.min(1,fl[3]/.12f)};
+        java.util.Arrays.sort(cand,0,n,(a,b)->Float.compare(dd(a,eye)/a[3],dd(b,eye)/b[3]));
+        for(int k=0;k<2;k++){int i=13+k;
+            if(k<n){float[] c=cand[k];lights[i*4]=c[0];lights[i*4+1]=c[1];lights[i*4+2]=c[2];lights[i*4+3]=8;lightCol[i*3]=.8f*c[3];lightCol[i*3+1]=1.9f*c[3];lightCol[i*3+2]=4.5f*c[3];}
+            else{lights[i*4+3]=0;lightCol[i*3]=lightCol[i*3+1]=lightCol[i*3+2]=0;}}
+    }
+    private static float dd(float[] a,float[] e){float x=a[0]-e[0],y=a[1]-e[1],z=a[2]-e[2];return x*x+y*y+z*z;}
+
     // ------------------------------------------------------------------ the chainsaw running and cutting
     private float sawRev,cutTimer,lastGrind;
     private void updateSaw(float dt){
@@ -203,6 +273,9 @@ final class Game implements GLSurfaceView.Renderer {
         chainScroll+=dt*(.2f+sawRev*2.6f);chainScroll-=(float)Math.floor(chainScroll);
         sfx.engine(.18f+sawRev*.55f,.55f+sawRev*1.25f);
         // the bar's leading edge biting into walls: sparks, scars and a grind
+        if(hero.saw>.6f){float[] sa=M.pt(hero.sawMat,new float[]{.47f,0,0}),sb=M.pt(hero.sawMat,new float[]{.97f,0,0});
+            float[] flesh=enemies.saw(sa,sb,dt);
+            if(flesh!=null){fx.blood(flesh[0],flesh[1],flesh[2],sb[0]-sa[0],sb[1]-sa[1],sb[2]-sa[2]);if(time-lastGrind>.14f){lastGrind=time;sfx.play(Sfx.GRIND,.8f,.7f+fx.rng.nextFloat()*.1f);sfx.play(Sfx.HIT,.5f,.7f);}pl.kickVel+=dt*2;}}
         if(hero.saw>.6f){float[] a=M.pt(hero.sawMat,new float[]{.47f,0,0}),b=M.pt(hero.sawMat,new float[]{.97f,0,0});float[] d=Model.sub(b,a);float l=Model.len(d);d=Model.mul(d,1/l);
             float[] hit=level.ray(a[0],a[1],a[2],d[0],d[1],d[2],l);
             if(hit!=null){cutTimer-=dt;if(cutTimer<=0){cutTimer=.06f;fx.impact(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5],(int)hit[7]);if(fx.rng.nextFloat()<.3f)fx.hole(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5]);}
@@ -247,12 +320,13 @@ final class Game implements GLSurfaceView.Renderer {
         float[] vp=M.mul(M.perspective((float)Math.toRadians(camFov),aspect,.05f,120f),view);
         GLES30.glViewport(0,0,W,H);GLES30.glClearColor(.02f,.01f,.008f,1);GLES30.glDepthMask(true);GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT|GLES30.GL_DEPTH_BUFFER_BIT);
         // lights: the level's, flickering over lava, plus the muzzle flash in the last slot
-        int n=Math.min(15,level.lights.size());
+        int n=Math.min(13,level.lights.size());
         for(int i=0;i<16;i++){
             if(i<n){Level.Light L=level.lights.get(i);float k=L.flicker?.75f+.25f*(float)Math.sin(time*7.3f+i*1.7f)*(float)Math.sin(time*3.1f+i):1;
                 lights[i*4]=L.x;lights[i*4+1]=L.y;lights[i*4+2]=L.z;lights[i*4+3]=L.radius;lightCol[i*3]=L.r*k;lightCol[i*3+1]=L.g*k;lightCol[i*3+2]=L.b*k;}
             else if(i==15&&flash>0){float[] mz=M.pt(hero.eyeFrame,gun.muzzleCam);float k=flash/.07f;lights[60]=mz[0]+f[0]*.3f;lights[61]=mz[1]+f[1]*.3f;lights[62]=mz[2]+f[2]*.3f;lights[63]=11;lightCol[45]=9*k;lightCol[46]=5.5f*k;lightCol[47]=2.2f*k;}
             else{lights[i*4+3]=0;lightCol[i*3]=lightCol[i*3+1]=lightCol[i*3+2]=0;}}
+        dynamicLights(eye);
         GLES30.glUseProgram(prog);
         GLES30.glUniform4fv(u(prog,"uL"),16,lights,0);GLES30.glUniform3fv(u(prog,"uLC"),16,lightCol,0);GLES30.glUniform1i(u(prog,"uLCount"),16);
         GLES30.glUniform3f(u(prog,"uCam"),eye[0],eye[1],eye[2]);GLES30.glUniform2i(u(prog,"uGrid"),level.W,level.H);
@@ -266,7 +340,7 @@ final class Game implements GLSurfaceView.Renderer {
             GLES30.glUniform2f(u(prog,"uUvScroll"),m==Tex.LAVA?time*.012f:0,m==Tex.LAVA?time*.007f:0);GLES30.glUniform1f(u(prog,"uPulse"),m==Tex.LAVA?1:0);
             levelMesh[m].draw();}
         GLES30.glUniform2f(u(prog,"uUvScroll"),0,0);GLES30.glUniform1f(u(prog,"uPulse"),0);
-        GLES30.glUniform1f(u(prog,"uEnvK"),5f);drawPlayer();GLES30.glUniform1f(u(prog,"uEnvK"),1f);
+        GLES30.glUniform1f(u(prog,"uEnvK"),5f);drawPlayer();drawDemons(eye);GLES30.glUniform1f(u(prog,"uEnvK"),1f);
         // spent shells lying around
         for(Fx.Shell s:fx.shells){float[] Mx=M.mul(M.tr(s.x,s.y,s.z),M.mul(M.rz(s.yaw),M.mul(M.ry(s.pitch),M.rx(s.roll))));model(Mx);
             bindMat(Tex.SHELL,false);parts[Gun.P_HULL].draw();bindMat(Tex.BRASS,false);parts[Gun.P_BASE].draw();}

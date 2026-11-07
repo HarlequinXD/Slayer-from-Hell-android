@@ -100,7 +100,10 @@ final class Hud extends View {
         text(c,"+ "+hp,dp*24,dp*40,26,hp<30?0xffff4030:0xffffffff,Paint.Align.LEFT);
         p.setColor(0x40ffffff);c.drawRect(dp*24,dp*50,dp*184,dp*56,p);p.setColor(hp<30?0xffff4030:0xffe8d0b0);c.drawRect(dp*24,dp*50,dp*24+dp*1.6f*hp,dp*56,p);
         text(c,game.fps+" fps",w/2,dp*22,11,0x90ffffff,Paint.Align.CENTER);
-        if(game.hint>0)text(c,"Find the lava hall. Shoot things. Don't touch the lava.",w/2,h*.28f,15,((int)(Math.min(1,game.hint)*230)<<24)|0xffe0c0,Paint.Align.CENTER);
+        // demons left in the keep
+        text(c,"DEMONS "+game.demonsLeft+" / "+game.demonsTotal,dp*24,dp*66,15,game.demonsLeft==0?0xff80ff90:0xffff8a50,Paint.Align.LEFT);
+        if(game.demonsLeft==0&&game.demonsTotal>0)text(c,"THE KEEP IS CLEANSED",w/2,h*.3f,26,0xffffd080,Paint.Align.CENTER);
+        if(game.hint>0)text(c,"Demons hold the Molten Keep. Clear it. Mind the lava.",w/2,h*.28f,15,((int)(Math.min(1,game.hint)*230)<<24)|0xffe0c0,Paint.Align.CENTER);
         postInvalidateOnAnimation();
     }
     private void button(Canvas c,float x,float y,float rad,String label,boolean down,int col){

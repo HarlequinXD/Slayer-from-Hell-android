@@ -74,7 +74,11 @@ public class HeroBaker {
 
     // ================================================================== the high poly sculpt: an armoured warden
     // x forward (she faces +x), y to her left, z up, metres; feet on z = 0, about 1.8 m tall (2.25 m with the glaive).
-    static final int M_SUIT=0,M_ARMOR=1,M_TRIM=2,M_CLOTH=3,M_LEATHER=4,M_VISOR=5,M_HAIR=6,M_OBSIDIAN=7,M_RUBBER=8,M_HOOF=9;
+    static final int M_SUIT=0,M_ARMOR=1,M_TRIM=2,M_CLOTH=3,M_LEATHER=4,M_VISOR=5,M_HAIR=6,M_OBSIDIAN=7,M_RUBBER=8,M_HOOF=9,M_BONE=10;
+    /** The demon variant (pass "demon"): same rig and legs, red armour, horns, orange eye slits, spiked pauldrons, no braid. */
+    static boolean DEMON=false;static String NAME="hero";
+    /** While fitting the low poly: 0 = whole head, 1 = head without horns, 2 = horns only. */
+    static int FIT=0;
     static float ell(float x,float y,float z,float cx,float cy,float cz,float rx,float ry,float rz){
         float px=(x-cx)/rx,py=(y-cy)/ry,pz=(z-cz)/rz;float k0=(float)Math.sqrt(px*px+py*py+pz*pz);
         float k1=(float)Math.sqrt(px*px/(rx*rx)+py*py/(ry*ry)+pz*pz/(rz*rz));return k1<1e-9f?-Math.min(rx,Math.min(ry,rz)):k0*(k0-1)/k1;
@@ -114,8 +118,8 @@ public class HeroBaker {
             case P_TORSO:case P_PELVIS:return torso(x,y,z,mat);
             case P_HEAD:return head(x,y,z,mat);
             case P_BRAID:return braid(x,y,z,mat);
-            case P_GLAIVE_SHAFT:return shaft(x,y,z,mat);
-            case P_GLAIVE_HEAD:return blade(x,y,z,mat);
+            case P_GLAIVE_SHAFT:if(DEMON){mat[0]=M_TRIM;return 1;}return shaft(x,y,z,mat);
+            case P_GLAIVE_HEAD:if(DEMON){mat[0]=M_TRIM;return 1;}return blade(x,y,z,mat);
         }
         int q=p-P_FIRST_SIDE;int s=q<PER_SIDE?1:-1;int k=q%PER_SIDE;
         switch(k){case S_PAULDRON:return pauldron(s,x,y,z,mat);case S_UPPER:return upperArm(s,x,y,z,mat);case S_FORE:return forearm(s,x,y,z,mat);
@@ -129,14 +133,15 @@ public class HeroBaker {
     static float torso(float x,float y,float z,int[] mat){
         float bd=bound(x,y,z,-.2f,.2f,-.26f,.26f,.78f,1.58f);if(bd>.02f){mat[0]=M_ARMOR;return bd;}
         // the body underneath (charcoal suit)
-        float body=ell(x,y,z,0,0,1.0f,.122f,.19f,.12f);
-        for(int s=-1;s<=1;s+=2)body=smin(body,ell(x,y,z,-.06f,s*.082f,.895f,.098f,.092f,.105f),.045f);   // fuller glutes
+        float body=DEMON?ell(x,y,z,0,0,1.0f,.118f,.172f,.115f):ell(x,y,z,0,0,1.0f,.122f,.19f,.12f);
+        if(!DEMON)for(int s=-1;s<=1;s+=2)body=smin(body,ell(x,y,z,-.06f,s*.082f,.895f,.098f,.092f,.105f),.045f);   // fuller glutes
         body=smin(body,ell(x,y,z,0,0,1.13f,.092f,.118f,.09f),.05f);
         body=smin(body,ell(x,y,z,0,0,1.3f,.125f,.165f,.135f),.06f);
         body=smin(body,ell(x,y,z,-.01f,0,1.42f,.1f,.195f,.075f),.05f);
         float d=body;int m=M_SUIT;
         // breastplate: the chest shell with a shaped bust, panel lines, a centre ridge
-        float chest=smin(ell(x,y,z,.0f,0,1.335f,.112f,.168f,.15f),Math.min(ell(x,y,z,.07f,.068f,1.285f,.078f,.07f,.064f),ell(x,y,z,.07f,-.068f,1.285f,.078f,.07f,.064f)),.04f)-.01f;   // a fuller bust
+        float chest=DEMON?smin(ell(x,y,z,.005f,0,1.34f,.13f,.195f,.155f),Math.min(box(x,y,z,.07f,.072f,1.33f,.06f,.07f,.065f,.03f),box(x,y,z,.07f,-.072f,1.33f,.06f,.07f,.065f,.03f)),.03f)-.01f   // broad, squared pectoral plates
+            :smin(ell(x,y,z,.0f,0,1.335f,.112f,.168f,.15f),Math.min(ell(x,y,z,.07f,.068f,1.285f,.078f,.07f,.064f),ell(x,y,z,.07f,-.068f,1.285f,.078f,.07f,.064f)),.04f)-.01f;   // a fuller bust
         chest=Math.max(chest,1.205f-z);chest=Math.max(chest,z-1.46f);
         chest=groove(chest,y,.004f,.003f*(x>0?1:0));chest=groove(chest,z-1.24f,.003f,.0025f);chest=groove(chest,z-1.43f,.003f,.0025f);
         chest=groove(chest,(float)Math.hypot(y,0)-.12f,.003f,.002f);
@@ -157,13 +162,14 @@ public class HeroBaker {
             float tas=box(x,y,z,.05f,s*.13f,.918f,.06f,.066f,.05f,.008f);float cut=ell(x,y,z,0,s*.105f,.83f,.1f,.08f,.1f);tas=Math.max(tas,-cut+.004f);
             tas=groove(tas,z-.92f,.003f,.002f);tas=rivets(tas,y,z-.95f,.03f,.004f,.0025f);if(tas<d){d=tas;m=M_ARMOR;}
             // culet plates curving over the glutes
+            if(DEMON)continue;
             float cul=ell(x,y,z,-.062f,s*.084f,.9f,.106f,.1f,.112f)-.004f;cul=Math.max(cul,Math.max(.885f-z,x+.03f));cul=Math.max(cul,-(ell(x,y,z,-.06f,s*.082f,.895f,.098f,.092f,.105f))-.002f);
             cul=groove(cul,z-.94f,.003f,.002f);cul=rivets(cul,y-s*.084f,z-.975f,.03f,.004f,.0025f);if(cul<d){d=cul;m=M_ARMOR;}}
         float sash=box(x,y,z,.125f,0,.935f,.006f,.055f,.068f,.004f);sash+=(float)Math.sin(z*90)*.0015f;if(sash<d){d=sash;m=M_CLOTH;}
         mat[0]=m;return d;
     }
     static float head(float x,float y,float z,int[] mat){
-        float bd=bound(x,y,z,-.16f,.17f,-.14f,.14f,1.45f,1.86f);if(bd>.02f){mat[0]=M_ARMOR;return bd;}
+        float bd=DEMON?bound(x,y,z,-.19f,.17f,-.26f,.26f,1.45f,2.05f):bound(x,y,z,-.16f,.17f,-.14f,.14f,1.45f,1.86f);if(bd>.02f){mat[0]=M_ARMOR;return bd;}
         float neck=cone(x,y,z,v(0,0,1.47f),v(0,0,1.6f),.047f,.044f);float d=neck;int m=M_SUIT;
         float gorget=ell(x,y,z,-.005f,0,1.515f,.075f,.085f,.035f);gorget=groove(gorget,z-1.515f,.003f,.002f);if(gorget<d){d=gorget;m=M_TRIM;}
         // helmet: a smooth shell, jaw guard, swept crest, visor slit
@@ -173,13 +179,28 @@ public class HeroBaker {
         helm=groove(helm,Math.abs(y)-.058f,.003f,.0025f*(x>.04f&&z<1.66f?1:0));          // cheek guards
         helm=groove(helm,z-1.62f+x*.25f,.003f,.002f*(x>0?1:0));
         helm=rivets(helm,x,Math.abs(y)-.098f,.04f,.005f,.003f);
-        boolean visorZone=x>.06f&&Math.abs(z-1.676f)<.0135f&&Math.abs(y)<.085f;
+        float ay=Math.abs(y);
+        boolean visorZone=DEMON?x>.06f&&ay>.016f&&ay<.072f&&Math.abs(z-(1.668f+(ay-.016f)*.42f))<.0095f   // two slanted eye slits
+            :x>.06f&&Math.abs(z-1.676f)<.0135f&&Math.abs(y)<.085f;
         if(visorZone)helm+=.006f;
         if(helm<d){d=helm;m=visorZone&&helm>-.004f?M_VISOR:M_ARMOR;}
+        if(DEMON&&FIT==2){d=1e9f;}
+        if(DEMON&&FIT!=1){   // ridged horns sweeping out, back and up from the temples; a brow ridge over the eyes
+            for(int s=-1;s<=1;s+=2){float hd=1e9f;
+                for(int i=0;i<HORN.length-1;i++){float[] a=HORN[i],b=HORN[i+1];float r0=mix(.034f,.003f,i/(float)(HORN.length-1)),r1=mix(.034f,.003f,(i+1)/(float)(HORN.length-1));
+                    hd=Math.min(hd,cone(x,y,z,v(a[0],s*a[1],a[2]),v(b[0],s*b[1],b[2]),r0,r1));}
+                float ring=(float)Math.sin((z*1.3f+Math.abs(y))*260);hd+=hd<.004f?ring*.0015f:0;
+                if(hd<d){d=hd;m=M_BONE;}}
+            if(FIT==2){mat[0]=m;return d;}
+            float brow=box(x,y,z,.105f,0,1.695f,.02f,.075f,.009f,.006f);brow=Math.max(brow,-(z-1.675f-Math.abs(y)*.42f));if(brow<d){d=brow;m=M_TRIM;}
+            float tusk=1e9f;for(int s=-1;s<=1;s+=2)tusk=Math.min(tusk,cone(x,y,z,v(.1f,s*.045f,1.6f),v(.13f,s*.06f,1.565f),.009f,.002f));if(tusk<d){d=tusk;m=M_BONE;}
+        }
         mat[0]=m;return d;
     }
+    static final float[][] HORN={{.0f,.085f,1.735f},{-.02f,.15f,1.76f},{-.06f,.2f,1.8f},{-.1f,.215f,1.87f},{-.13f,.2f,1.95f},{-.14f,.175f,2.01f}};
     static float[] braidPt(float t){return v(-.115f-.07f*t-.02f*t*t,0.012f*(float)Math.sin(t*3),1.63f-.42f*t);}
     static float braid(float x,float y,float z,int[] mat){
+        if(DEMON){mat[0]=M_HAIR;return 1;}
         float bd=bound(x,y,z,-.25f,-.06f,-.07f,.07f,1.15f,1.7f);if(bd>.02f){mat[0]=M_HAIR;return bd;}
         float d=1e9f;
         for(int i=0;i<=26;i++){float t=i/26f;float[] c=braidPt(t);float r=mix(.03f,.013f,t);float off=(i%2==0?1:-1)*r*.35f;
@@ -190,7 +211,7 @@ public class HeroBaker {
         return d;
     }
     static float pauldron(int s,float x,float y,float z,int[] mat){
-        float cy=s*.235f;float bd=bound(x,y,z,-.15f,.15f,cy-.14f,cy+.14f,1.3f,1.6f);if(bd>.02f){mat[0]=M_ARMOR;return bd;}
+        float cy=s*.235f;float bd=bound(x,y,z,-.15f,.15f,cy-.14f,cy+.14f,1.3f,DEMON?1.68f:1.6f);if(bd>.02f){mat[0]=M_ARMOR;return bd;}
         float top=ell(x,y,z,-.005f,cy,1.48f,.105f,.085f,.075f);top=Math.max(top,1.42f-z-(Math.abs(y-cy))*.4f);
         float mid=ell(x,y,z,-.005f,cy+s*.01f,1.435f,.1f,.083f,.065f);mid=Math.max(mid,1.37f-z);
         float low=ell(x,y,z,-.005f,cy+s*.016f,1.395f,.092f,.077f,.052f);low=Math.max(low,1.355f-z);
@@ -198,7 +219,9 @@ public class HeroBaker {
         d=groove(d,(float)Math.hypot(x+.005f,y-cy)-.06f,.003f,.002f*(z>1.5f?1:0));
         d=rivets(d,x,z-1.405f,.035f,.005f,.003f);
         float edge=Math.min(Math.abs(z-1.42f),Math.min(Math.abs(z-1.37f),Math.abs(z-1.355f)));
-        mat[0]=edge<.006f?M_TRIM:M_ARMOR;return d;
+        int m=edge<.006f?M_TRIM:M_ARMOR;
+        if(DEMON)for(int k=0;k<3;k++){float sx=-.05f+k*.05f;float sp=cone(x,y,z,v(sx,cy+s*.02f,1.53f),v(sx-.02f,cy+s*.06f,1.64f-k*.015f),.017f,.002f);if(sp<d){d=sp;m=M_TRIM;}}
+        mat[0]=m;return d;
     }
     static float upperArm(int s,float x,float y,float z,int[] mat){
         float[] a=shoulder(s),b=elbow(s);float bd=bound(x,y,z,Math.min(a[0],b[0])-.09f,Math.max(a[0],b[0])+.09f,Math.min(a[1],b[1])-.09f,Math.max(a[1],b[1])+.09f,b[2]-.09f,a[2]+.05f);
@@ -310,16 +333,19 @@ public class HeroBaker {
                 float n=fbm(x*40,y*40,z*40,4),soot=smooth(.6f,.85f,fbm(x*9+2,y*9,z*9,5)),mott=fbm(x*14+5,y*14,z*14,4);
                 float wear=smooth(.62f,.9f,lap*.0013f+fbm(x*120,y*120,z*120,3)*.45f);float scr=noise(x*20+z*300,y*300,z*20)>.95f?1:0;
                 float chip=Math.max(wear,smooth(.72f,.8f,fbm(x*60+3,y*60,z*60,4))*.8f);
-                r=.072f*(.85f+mott*.3f);g=.086f*(.85f+mott*.3f);b=.032f*(.85f+mott*.3f);
+                if(DEMON){r=.24f*(.85f+mott*.3f);g=.024f*(.85f+mott*.3f);b=.018f*(.85f+mott*.3f);}   // blood-red painted steel
+                else{r=.072f*(.85f+mott*.3f);g=.086f*(.85f+mott*.3f);b=.032f*(.85f+mott*.3f);}
                 r=mix(r,.03f,soot*.6f);g=mix(g,.032f,soot*.6f);b=mix(b,.025f,soot*.6f);
                 float st=Math.max(chip,scr*.7f);r=mix(r,.62f,st);g=mix(g,.61f,st);b=mix(b,.58f,st);
                 rough=mix(.48f+n*.12f+soot*.2f,.24f,st);metal=st;
                 if(cav>.25f){float c=smooth(.25f,.6f,cav);r=mix(r,.03f,c);g=mix(g,.028f,c);b=mix(b,.022f,c);rough=mix(rough,.85f,c);metal=mix(metal,0,c);}
                 break;}
             case M_TRIM:{float n=fbm(x*200,y*200,z*200,3);float wear=smooth(.55f,.9f,lap*.0012f+n*.4f);r=mix(.06f,.4f,wear);g=mix(.06f,.38f,wear);b=mix(.065f,.36f,wear);rough=.35f+n*.15f;metal=1;break;}
-            case M_CLOTH:{float n=fbm(x*80,y*80,z*120,4);float th=((int)(y*1200)&1)==0?.04f:0;r=.32f+n*.08f+th;g=.03f+n*.015f;b=.03f+n*.015f;rough=.85f;metal=0;break;}
+            case M_CLOTH:if(DEMON){float n=fbm(x*80,y*80,z*120,4);r=.06f+n*.03f;g=.035f+n*.015f;b=.03f+n*.01f;rough=.9f;metal=0;break;}
+            {float n=fbm(x*80,y*80,z*120,4);float th=((int)(y*1200)&1)==0?.04f:0;r=.32f+n*.08f+th;g=.03f+n*.015f;b=.03f+n*.015f;rough=.85f;metal=0;break;}
             case M_LEATHER:{float n=fbm(x*150,y*150,z*150,4);r=.11f+n*.05f;g=.065f+n*.03f;b=.04f+n*.02f;rough=.62f+n*.15f;metal=0;break;}
-            case M_VISOR:{r=1f;g=.55f;b=.12f;rough=.15f;metal=0;emit=1;break;}
+            case M_VISOR:{r=1f;g=DEMON?.26f:.55f;b=DEMON?.01f:.12f;rough=.15f;metal=0;emit=1;break;}   // the demon's eyes burn orange
+            case M_BONE:{float n=fbm(x*90,y*90,z*300,4);float tip=smooth(1.85f,2.0f,z);r=mix(.55f,.08f,tip)*(.8f+n*.3f);g=mix(.48f,.06f,tip)*(.8f+n*.3f);b=mix(.36f,.05f,tip)*(.8f+n*.3f);rough=.45f+n*.15f;metal=0;break;}
             case M_HAIR:{float st=.5f+.5f*(float)Math.sin((y*1.2f+z)*1400);float n=fbm(x*60,y*60,z*60,3);r=.2f*(.7f+st*.4f)+n*.04f;g=.055f*(.7f+st*.4f);b=.025f;rough=.55f;metal=0;break;}
             case M_OBSIDIAN:{   // black volcanic glass with molten cracks that glow
                 float[] c=cells(y*60+x*20,z*28,x*30);float crack=1-smooth(0,.12f,c[1]-c[0]);float n=fbm(x*90,y*90,z*90,3);
@@ -464,9 +490,12 @@ public class HeroBaker {
         piece(P_PELVIS,line(v(0,0,.78f),v(0,0,1.125f),0,.1f,.22f,.36f,.5f,.64f,.78f,.9f,1),16,.36f,true,false);
         piece(P_TORSO,line(v(0,0,1.105f),v(0,0,1.49f),0,.14f,.28f,.42f,.55f,.68f,.8f,.9f,1),16,.36f,false,true);
         // helmet and neck
-        piece(P_HEAD,line(v(0,0,1.475f),v(0,0,1.805f),0,.13f,.23f,.33f,.43f,.53f,.63f,.73f,.83f,.92f,1),14,.3f,false,true);
+        FIT=DEMON?1:0;piece(P_HEAD,line(v(0,0,1.475f),v(0,0,1.805f),0,.13f,.23f,.33f,.43f,.53f,.63f,.73f,.83f,.92f,1),14,.3f,false,true);FIT=0;
+        if(DEMON)for(int s=-1;s<=1;s+=2){FIT=2;int n=HORN.length;float[][] C=new float[n][],X=new float[n][];   // horns: their own tapering lofts
+            for(int i=0;i<n;i++){C[i]=v(HORN[i][0],s*HORN[i][1],HORN[i][2]);float[] a=HORN[Math.max(0,i-1)],b=HORN[Math.min(n-1,i+1)];X[i]=norm(v(b[0]-a[0],s*(b[1]-a[1]),b[2]-a[2]));}
+            C[0]=add(C[0],X[0],-.02f);piece(P_HEAD,new float[][][]{C,X},6,.06f,.02f,false,true,.05f,.05f);FIT=0;}
         // braid: stations along its curve
-        {int n=8;float[][] C=new float[n][],X=new float[n][];for(int i=0;i<n;i++){float t=.08f+.9f*i/(n-1);C[i]=braidPt(t);X[i]=norm(sub(braidPt(Math.min(1,t+.01f)),braidPt(Math.max(0,t-.01f))));}
+        if(!DEMON){int n=8;float[][] C=new float[n][],X=new float[n][];for(int i=0;i<n;i++){float t=.08f+.9f*i/(n-1);C[i]=braidPt(t);X[i]=norm(sub(braidPt(Math.min(1,t+.01f)),braidPt(Math.max(0,t-.01f))));}
             piece(P_BRAID,new float[][][]{C,X},6,.09f,.09f,true,true,.06f,.06f);}
         // glaive: shaft and blade (the blade's rings cast from a flat ellipse so vertices spread over its faces)
         piece(P_GLAIVE_SHAFT,line(v(GX,GY,.0f),v(GX,GY,1.745f),.004f,.035f,.47f,.53f,.62f,1),6,.1f,true,false);
@@ -590,7 +619,7 @@ public class HeroBaker {
             a.setRGB(x,y,(b8(AO[i])<<24)|(b8(srgb(A_R[i]))<<16)|(b8(srgb(A_G[i]))<<8)|b8(srgb(A_B[i])));
             b.setRGB(x,y,(b8(HT[i])<<24)|(b8(NX[i]/l*.5f+.5f)<<16)|(b8(NY[i]/l*.5f+.5f)<<8)|b8(NZ[i]/l*.5f+.5f));
             c.setRGB(x,y,(b8(RO[i])<<16)|(b8(ME[i])<<8)|b8(EM[i]));}
-        ImageIO.write(a,"png",new File(dir,"hero_a.png"));ImageIO.write(b,"png",new File(dir,"hero_b.png"));ImageIO.write(c,"png",new File(dir,"hero_c.png"));
+        ImageIO.write(a,"png",new File(dir,NAME+"_a.png"));ImageIO.write(b,"png",new File(dir,NAME+"_b.png"));ImageIO.write(c,"png",new File(dir,NAME+"_c.png"));
     }
     /**
      * hero.bin: same layout as gun.bin: magic, pom scale, group count, then per group a vertex count and 11 floats per
@@ -718,26 +747,27 @@ public class HeroBaker {
         for(int y=0;y<AH/2;y++)for(int x=0;x<AW/2;x++){int i=(y*2)*AW+x*2;im.setRGB(x,y,(b8(srgb(A_R[i]*AO[i]+EM[i]*A_R[i]))<<16)|(b8(srgb(A_G[i]*AO[i]+EM[i]*A_G[i]))<<8)|b8(srgb(A_B[i]*AO[i]+EM[i]*A_B[i])));}
         java.awt.Graphics2D g=im.createGraphics();g.setColor(new java.awt.Color(0,255,160,90));
         for(Chart c:charts)for(int[] t:c.tris)for(int k=0;k<3;k++){float[] a=c.verts.get(t[k]),b=c.verts.get(t[(k+1)%3]);g.drawLine((int)(a[9]*AW/2),(int)(a[10]*AH/2),(int)(b[9]*AW/2),(int)(b[10]*AH/2));}
-        ImageIO.write(im,"png",new File(dir,"hero_uv.png"));
+        ImageIO.write(im,"png",new File(dir,NAME+"_uv.png"));
     }
 
     public static void main(String[] a)throws Exception{
         File assets=new File(a[0]),prev=new File(a[1]);assets.mkdirs();prev.mkdirs();String mode=a.length>2?a[2]:"";
+        if(mode.startsWith("demon")){DEMON=true;NAME="demon";mode=mode.substring(5).replace(":","");}
         long t0=System.currentTimeMillis();
         buildLow();int lowTris=0;for(Chart c:charts)lowTris+=c.tris.size();
         System.out.println("low poly: "+lowTris+" triangles in "+charts.size()+" UV charts; per part "+Arrays.toString(partTris));
-        if(mode.equals("low")){AW=AH=64;A_R=A_G=A_B=AO=NX=NY=HT=RO=ME=EM=new float[AW*AH];wirePreview(prev,-.6f,"hero_low_front.png");wirePreview(prev,2.4f,"hero_low_back.png");return;}
+        if(mode.equals("low")){AW=AH=64;A_R=A_G=A_B=AO=NX=NY=HT=RO=ME=EM=new float[AW*AH];wirePreview(prev,-.6f,NAME+"_low_front.png");wirePreview(prev,2.4f,NAME+"_low_back.png");return;}
         pack();System.out.printf(Locale.ROOT,"atlas %dx%d at %.0f texels per metre (%.2f mm per texel)%n",AW,AH,texelsPerMetre,1000/texelsPerMetre);
         if(mode.equals("high")){long hp=meshHigh(0,.0015f,null);System.out.println("high poly total: "+hp+" triangles");}
-        if(mode.equals("obj")){long hp=meshHigh(0,.0015f,new File(prev,"hero_high.obj"));System.out.println("high poly total: "+hp+" triangles");}
-        if(mode.equals("prev")){A_R=A_G=A_B=AO=NX=NY=NZ=HT=RO=ME=EM=new float[AW*AH];preview(prev,-.5f,.08f,"hero_high_only.png",v(0,0,1.13f),2.35f,560,1000);return;}
+        if(mode.equals("obj")){long hp=meshHigh(0,.0015f,new File(prev,NAME+"_high.obj"));System.out.println("high poly total: "+hp+" triangles");}
+        if(mode.equals("prev")){A_R=A_G=A_B=AO=NX=NY=NZ=HT=RO=ME=EM=new float[AW*AH];preview(prev,-.5f,.08f,NAME+"_high_only.png",v(0,0,1.13f),2.35f,560,1000);return;}
         System.out.println("baking…");bake();dilate(10);
-        writeMaps(assets);int tr=writeMesh(new File(assets,"hero.bin"));System.out.println("mesh written: "+tr+" triangles");
-        uvPreview(prev);wirePreview(prev,-.6f,"hero_low_front.png");wirePreview(prev,2.4f,"hero_low_back.png");
-        preview(prev,-.5f,.08f,"hero_bake.png",v(0,0,1.13f),2.35f,600,1060);
-        preview(prev,2.5f,.1f,"hero_bake_back.png",v(0,0,1.13f),2.35f,600,1060);
-        preview(prev,-.3f,.05f,"hero_bake_head.png",v(.0f,0,1.6f),.5f,520,520);
-        preview(prev,-.9f,.15f,"hero_bake_blade.png",v(GX,GY,2.0f),.6f,420,560);
+        writeMaps(assets);int tr=writeMesh(new File(assets,NAME+".bin"));System.out.println("mesh written: "+tr+" triangles");
+        uvPreview(prev);wirePreview(prev,-.6f,NAME+"_low_front.png");wirePreview(prev,2.4f,NAME+"_low_back.png");
+        preview(prev,-.5f,.08f,NAME+"_bake.png",v(0,0,1.13f),2.35f,600,1060);
+        preview(prev,2.5f,.1f,NAME+"_bake_back.png",v(0,0,1.13f),2.35f,600,1060);
+        preview(prev,-.3f,.05f,NAME+"_bake_head.png",v(.0f,0,1.6f),.5f,520,520);
+        preview(prev,-.9f,.15f,NAME+"_bake_blade.png",v(GX,GY,2.0f),.6f,420,560);
         System.out.println("done in "+(System.currentTimeMillis()-t0)/1000+" s");
     }
 }

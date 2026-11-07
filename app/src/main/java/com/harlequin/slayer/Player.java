@@ -11,6 +11,8 @@ final class Player {
     float x,y,z,vx,vy,vz,yaw,pitch;boolean onGround;
     float health=100;float hurtFlash;
     float bobPhase,bobAmt,landDip,landVel,stepSmooth,kick,kickVel,roll;
+    /** How many times she has died (the game resets the level when this changes). */
+    int deaths;
     int stepCount;boolean justLanded,justJumped,stepped;float landSpeed;
     /** Wall contact: a hit this frame (speed into the wall, the wall's normal pointing back at her), and whether she is pushing against one. */
     float bumpSpeed,bumpNx,bumpNy,wallNx,wallNy;boolean pushingWall;private float bumpCool;
@@ -68,7 +70,7 @@ final class Player {
         Level.Cell c=L.atF(x,y);
         if(!c.solid&&c.floorMat==Tex.LAVA&&z<=c.floor+.05f){health-=40*dt;hurtFlash=1;}
         hurtFlash=Math.max(0,hurtFlash-dt*2);
-        if(health<=0)spawn(L);
+        if(health<=0){deaths++;spawn(L);}
     }
     private void accelerate(float wx,float wy,float wishSpeed,float accel,float dt){
         float cur=vx*wx+vy*wy;float add=wishSpeed-cur;if(add<=0)return;

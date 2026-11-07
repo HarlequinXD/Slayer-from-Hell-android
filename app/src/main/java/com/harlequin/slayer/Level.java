@@ -3,7 +3,7 @@ package com.harlequin.slayer;
 import java.util.ArrayList;
 
 /**
- * The test level: a grid of 1 m cells, each with a floor and ceiling height and materials (like Doom sectors on a
+ * The level ("The Molten Keep"): a grid of 1 m cells, each with a floor and ceiling height and materials (like Doom sectors on a
  * grid, rendered in full 3D). Walls, stair risers, ledges and lintels are generated wherever neighbouring cells
  * differ. Also does collision for the player, ray casts for pellets, and works out which lights each cell can see
  * so light doesn't leak through walls (a cheap baked shadow).
@@ -14,43 +14,65 @@ final class Level {
     static final class Cell {boolean solid;float floor,ceil;int floorMat,ceilMat,wallMat,sideMat;boolean crate;}
     static final class Light {float x,y,z,r,g,b,radius;boolean flicker;Light(float x,float y,float z,int rgb,float i,float radius,boolean fl){this.x=x;this.y=y;this.z=z;r=((rgb>>16)&255)/255f*i;g=((rgb>>8)&255)/255f*i;b=(rgb&255)/255f*i;this.radius=radius;flicker=fl;}}
 
-    // Legend. Rooms: '.' tiled hall (4 m ceiling, brick walls), 'L' its ceiling lights, 'O' carved pillar, 'c' crate, 'k' crate stack.
-    // Big hall: ',' diamond-plate floor (9 m), 'l' hall light, '1'-'8' stairs, 'P' raised platform, '_' lava pit.
-    // Store room: 'g' grated floor (3.5 m concrete ceiling), 'G' its lights, 'e' crate. '#' brick, 'M' metal, '=' corridor.
+    // "The Molten Keep". Legend:
+    //  start chamber   '.' tiled floor, 4 m ceiling, brick   'L' its lights   'S' where she starts   '=' corridor
+    //  courtyard       ',' cracked tiles, 10 m ceiling        'l' its lights   '_' lava channel   'O' pillar   'c'/'k' crates
+    //                  't' terraces (1.5 m) with stairs '1'-'6'
+    //  temple hall     'h' (7 m)   'H' lights   'a' the altar dais (1 m) with steps 'w','x','y'
+    //  store room      'g' (3.5 m)   'G' light   'e' crate        gate room  'v' (6 m)   'V' lights   '~' lava pool
+    //  demons          '@' courtyard   '*' terrace   '&' temple   'A' altar   '$' store   '%' gate room
     static final String[] MAP={
-        "##############################################",
-        "#............#####MMMMMMMMMMMMMMMMMMMMMMMMM###",
-        "#..L.....L...#####M,,,,,,,,,,,,,,,,,,,,,,,M###",
-        "#.O......O...#####M,PPPPPPPPPPPPPPPPPPPPP,M###",
-        "#............#####M,PPPPPPPPPPPPPPPPPPPPP,M###",
-        "#....c.......#####M,PPPPPPPPPPPPPPPPPPPPP,M###",
-        "#....ck......#####M,,8888,,,,,,,,,,,,,,,,,M###",
-        "#............MMMMMM,,7777,,,,,,,l,,,,,,,,,M###",
-        "#.......................6666,,,,,,,,,,,,,,M###",
-        "#..L.....L..==========,,5555,,___________,M###",
-        "#.......................4444,,___________,M###",
-        "#............MMMMMM,,,,3333,,,___________,M###",
-        "#.O......O...#####M,,,,2222,,,___________,M###",
-        "#............#####M,,,,1111,,,___________,M###",
-        "#............#####M,,,,,,,,,,,___________,M###",
-        "######..######MMMMM,,l,,,,,,,,,,,,,,,,,,l,M###",
-        "#####....#####MMMMM,,,,,,,,,,,,,,,,,,,,,,,M###",
-        "#####....#####MMMMMMMMMMMMMMMMMMMMMMMMMMMMM###",
-        "#####....#####################################",
-        "####gggggggggggg##############################",
-        "####gGggggggggGg##############################",
-        "####geegggggggegg#############################",
-        "####gggggggOggggg#############################",
-        "####ggggeeggggggg#############################",
-        "####gggggggggggeg#############################",
-        "####gGgggggggggGg#############################",
-        "####ggggggggggggg#############################",
-        "##############################################",
+        "############################################################",
+        "############################################################",
+        "##################vvvvvvvvvvvvvvvv##########################",
+        "##################vvvv~~~~~~~~vvvv##########################",
+        "##################vv%v~~~~~~~~v%vv##########################",
+        "##################vvvv~~~~~~~~vvvv##########################",
+        "##################vvvvvvvvvvvvvvvv##########################",
+        "##################vVvvvvvvvvvvvvVv##########################",
+        "##################vvvvvvvvvvvvvvvv##########################",
+        "#########################vv#################################",
+        "#########################vv#################################",
+        "#########################vv#################################",
+        "########ttttt,,,,,,,,,,,,,,,,,,,,,,,,,,ttttt################",
+        "########ttttt,,,,,,,O,,,,,,,,,,O,,,,,,,ttttt##hhhhhhhhhhhh##",
+        "#gggggg#tt*tt,,,,,,,,,,,,,,@,,,,,,,,,,,tt*tt##hhhhhhhhhhhh##",
+        "#geggeg#ttttt654321,,,,,,,,,,,,,,123456ttttt##hhOhhhOhhhOh##",
+        "#gggggg#ttttt654321,,,,,,l,,,,,,,123456ttttt##hhhhhhhhhhhh##",
+        "#gggggg#ttttt,,,,,,@,,,,,,,,,,,,,,,,,,,ttttt##hhhhHhhhhhhh##",
+        "#gggggg#ttttt,,,,,,,,,,,,,,,,,,@,,,,,,,ttttt##hhhhhhaaaaah##",
+        "#ggGggg#,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,##hhhhhhaaaaah##",
+        "#gggggg#,______,,,_______,,_______,,,______,##hhhwxyaaAaah##",
+        "#gggggg#,______,,,_______,,_______,,,______,##hhhwxyaaaaah##",
+        "#gg$ggg#,______,,,_______,,_______,,,______,##h&hhhhaaaaah##",
+        "#ggggggg,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,##hhhhhhaaaaah##",
+        "#geggggg,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,hhhhhhhhhhhhhh##",
+        "#gggggg#,,,,O,,,,,,,O,,,@,,,,,,O,,,,,,,O,,,,hhhhhhHhhhhhhh##",
+        "########,,,,,,,,,,,,,,,,,l,,,,,,,,,,,@,,,,,,##hhOhhhOhhhOh##",
+        "########,,,,,,@,l,,,,,,,,,,,,,,,,,,l,,,,,,,,##hhhhhhhh&hhh##",
+        "########,,ccO,,,,,,,,,,,,,,,,,,,,,,,,,,O,,,,##hhhhhhhhhhhh##",
+        "########,,k,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,ck,################",
+        "########,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,################",
+        "#########################==#################################",
+        "#########################==#################################",
+        "#########################==#################################",
+        "#########################==#################################",
+        "#########################==#################################",
+        "#####################..........#############################",
+        "#####################..........#############################",
+        "#####################.L......L.#############################",
+        "#####################..........#############################",
+        "#####################....S.....#############################",
+        "#####################..........#############################",
+        "############################################################",
+        "############################################################",
     };
     final int W,H;final Cell[] cells;final ArrayList<Light> lights=new ArrayList<>();
-    float spawnX=3.5f,spawnY=8.5f,spawnAngle=0;
+    float spawnX=3.5f,spawnY=8.5f,spawnAngle=(float)Math.PI/2;
+    /** Demon spawn points: x, y, facing. */
+    final ArrayList<float[]> demonSpawns=new ArrayList<>();
     static final float STEP=.55f;
-    /** Per cell: which of the first 16 lights it can see (bit i = light i). */
+    /** Per cell: which of the level lights (at most 13; slots 13-15 are the game's dynamic lights) it can see (bit i = light i). */
     final int[] lightMask;
 
     Level(){
@@ -58,8 +80,7 @@ final class Level {
         for(int my=0;my<H;my++){String row=MAP[my];for(int x=0;x<W;x++){char ch=x<row.length()?row.charAt(x):'#';int y=H-1-my;cells[y*W+x]=cell(ch,x,y);}}
         // lava glow: a light every few cells over the pit
         for(int y=0;y<H;y+=4)for(int x=0;x<W;x+=4){int lava=0;float sx=0,sy=0;for(int j=0;j<4;j++)for(int i=0;i<4;i++){Cell c=at(x+i,y+j);if(!c.solid&&c.floorMat==Tex.LAVA){lava++;sx+=x+i+.5f;sy+=y+j+.5f;}}
-            if(lava>=8&&lights.size()<15)lights.add(new Light(sx/lava,sy/lava,-.3f,0xff5a14,2.2f,7f,true));}
-        spawnX=3.5f;spawnY=H-1-8+.5f;spawnAngle=0;
+            if(lava>=8&&lights.size()<13)lights.add(new Light(sx/lava,sy/lava,-.3f,0xff5a14,2.2f,7f,true));}
         lightMask=new int[W*H];bakeLights();
     }
     private Cell cell(char ch,int x,int y){
@@ -68,26 +89,46 @@ final class Level {
             case '#':c.solid=true;break;
             case 'M':c.solid=true;c.wallMat=c.sideMat=Tex.METAL_PANEL;break;
             case 'O':c.solid=true;c.wallMat=c.sideMat=Tex.PILLAR;break;
-            case 'L':c.ceilMat=Tex.LIGHT;c.ceil=4;light(x,y,3.7f,0xffd8a8,2.6f,9f);break;
-            case 'c':c.crate=true;c.floor=1f;c.floorMat=Tex.CRATE;c.sideMat=Tex.CRATE;break;
-            case 'k':c.crate=true;c.floor=2f;c.floorMat=Tex.CRATE;c.sideMat=Tex.CRATE;break;
+            case 'S':spawnX=x+.5f;spawnY=y+.5f;break;
+            case '.':break;
+            case 'L':c.ceilMat=Tex.LIGHT;light(x,y,3.7f,0xffd8a8,2.6f,9f);break;
             case '=':c.ceil=3.2f;c.floorMat=Tex.DIAMOND_PLATE;c.ceilMat=Tex.METAL_PANEL;c.wallMat=c.sideMat=Tex.METAL_PANEL;break;
-            case ',':hall(c);break;
-            case 'l':hall(c);c.ceilMat=Tex.LIGHT;light(x,y,8.2f,0xffe0c0,4.2f,16f);break;
-            case 'P':hall(c);c.floor=2f;break;
-            case '_':hall(c);c.floor=-1.3f;c.floorMat=Tex.LAVA;c.sideMat=Tex.BRICK;break;
+            case ',':yard(c);break;
+            case '@':yard(c);demon(x,y);break;
+            case 'l':yard(c);c.ceilMat=Tex.LIGHT;light(x,y,9.2f,0xffc8a0,4.6f,17f);break;
+            case '_':yard(c);c.floor=-1.3f;c.floorMat=Tex.LAVA;c.sideMat=Tex.BRICK;break;
+            case 't':yard(c);c.floor=1.5f;c.floorMat=Tex.DIAMOND_PLATE;c.sideMat=Tex.METAL_PANEL;break;
+            case '*':yard(c);c.floor=1.5f;c.floorMat=Tex.DIAMOND_PLATE;c.sideMat=Tex.METAL_PANEL;demon(x,y);break;
+            case 'c':yard(c);c.crate=true;c.floor=1f;c.floorMat=Tex.CRATE;c.sideMat=Tex.CRATE;break;
+            case 'k':yard(c);c.crate=true;c.floor=2f;c.floorMat=Tex.CRATE;c.sideMat=Tex.CRATE;break;
+            case 'h':temple(c);break;
+            case '&':temple(c);demon(x,y);break;
+            case 'H':temple(c);c.ceilMat=Tex.LIGHT;light(x,y,6.7f,0xff7a48,3.6f,13f);break;
+            case 'a':temple(c);c.floor=1f;c.floorMat=Tex.METAL_PANEL;c.sideMat=Tex.PILLAR;break;
+            case 'A':temple(c);c.floor=1f;c.floorMat=Tex.METAL_PANEL;c.sideMat=Tex.PILLAR;demon(x,y);break;
+            case 'w':temple(c);c.floor=.25f;c.sideMat=Tex.PILLAR;break;
+            case 'x':temple(c);c.floor=.5f;c.sideMat=Tex.PILLAR;break;
+            case 'y':temple(c);c.floor=.75f;c.sideMat=Tex.PILLAR;break;
             case 'g':store(c);break;
+            case '$':store(c);demon(x,y);break;
             case 'G':store(c);c.ceilMat=Tex.LIGHT;light(x,y,3.2f,0xc8d8ff,2.2f,8f);break;
             case 'e':store(c);c.crate=true;c.floor=1f;c.floorMat=Tex.CRATE;c.sideMat=Tex.CRATE;break;
+            case 'v':gate(c);break;
+            case '%':gate(c);demon(x,y);break;
+            case 'V':gate(c);c.ceilMat=Tex.LIGHT;light(x,y,5.7f,0xffb070,3f,11f);break;
+            case '~':gate(c);c.floor=-1f;c.floorMat=Tex.LAVA;c.sideMat=Tex.BRICK;break;
             default:
-                if(ch>='1'&&ch<='8'){hall(c);c.floor=(ch-'0')*.25f;c.sideMat=Tex.METAL_PANEL;}
+                if(ch>='1'&&ch<='8'){yard(c);c.floor=(ch-'0')*.25f;c.floorMat=Tex.DIAMOND_PLATE;c.sideMat=Tex.METAL_PANEL;}
         }
         if(c.solid){c.floor=0;c.ceil=0;}
         return c;
     }
-    private void hall(Cell c){c.floor=0;c.ceil=9;c.floorMat=Tex.DIAMOND_PLATE;c.ceilMat=Tex.METAL_PANEL;c.wallMat=Tex.METAL_PANEL;c.sideMat=Tex.METAL_PANEL;}
+    private void yard(Cell c){c.floor=0;c.ceil=10;c.floorMat=Tex.FLOOR_TILES;c.ceilMat=Tex.METAL_PANEL;c.wallMat=Tex.BRICK;c.sideMat=Tex.BRICK;}
+    private void temple(Cell c){c.floor=0;c.ceil=7;c.floorMat=Tex.FLOOR_TILES;c.ceilMat=Tex.CONCRETE;c.wallMat=Tex.BRICK;c.sideMat=Tex.BRICK;}
+    private void gate(Cell c){c.floor=0;c.ceil=6;c.floorMat=Tex.DIAMOND_PLATE;c.ceilMat=Tex.METAL_PANEL;c.wallMat=Tex.METAL_PANEL;c.sideMat=Tex.BRICK;}
     private void store(Cell c){c.floor=0;c.ceil=3.5f;c.floorMat=Tex.DIAMOND_PLATE;c.ceilMat=Tex.CONCRETE;c.wallMat=Tex.CONCRETE;c.sideMat=Tex.CONCRETE;}
-    private void light(int x,int y,float z,int rgb,float i,float r){if(lights.size()<15)lights.add(new Light(x+.5f,y+.5f,z,rgb,i,r,false));}
+    private void demon(int x,int y){demonSpawns.add(new float[]{x+.5f,y+.5f,(float)(((x*7+y*13)%12)*Math.PI/6)});}
+    private void light(int x,int y,float z,int rgb,float i,float r){if(lights.size()<13)lights.add(new Light(x+.5f,y+.5f,z,rgb,i,r,false));}
 
     Cell at(int x,int y){if(x<0||y<0||x>=W||y>=H)return SOLID;return cells[y*W+x];}
     private static final Cell SOLID=new Cell();static{SOLID.solid=true;}

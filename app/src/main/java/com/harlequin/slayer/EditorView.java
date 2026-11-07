@@ -141,6 +141,7 @@ final class EditorView extends View implements Pointer.Aware {
         if(s.ceil-s.floor<.05f)return 0x55303640;   // pillar
         if(s.special==SectorMap.SP_LAVA||s.floorTex==Tex.LAVA)return 0x40ff6a20;
         if(s.special==SectorMap.SP_EXIT)return 0x403ecf8e;
+        if(s.special==SectorMap.SP_DOOR){int dk=SectorMap.doorKey(s);return dk<0?0x50c8b8a8:(0x60000000|SectorMap.KEY_RGB[dk]);}
         float t=Math.max(0,Math.min(1,(s.floor+1.5f)/4.5f));int a=(int)(0x20+t*0x34);return (a<<24)|0xc89a86;
     }
     private void drawMap(Canvas c){
@@ -167,7 +168,8 @@ final class EditorView extends View implements Pointer.Aware {
             p.setColor(0xff140b09);c.drawPath(path,p);p.setColor(col);c.drawPath(path,p);
             if(cell>dp(22)){float[] ce=m.centroid(s);if(m.sectorAt(ce[0],ce[1])==k){
                 ui.textMid(c,EditorViewFmt.f(s.floor)+(s.ceil-s.floor<.05f?" ▮":" / "+EditorViewFmt.f(s.ceil)),sx(ce[0]),sy(ce[1]),9.5f,0x99ffffff,1,0);
-                if(s.special==SectorMap.SP_EXIT)ui.icon(c,Icons.FLAG,sx(ce[0]),sy(ce[1])-dp(14),13,0xcc3ecf8e);}}}
+                if(s.special==SectorMap.SP_EXIT)ui.icon(c,Icons.FLAG,sx(ce[0]),sy(ce[1])-dp(14),13,0xcc3ecf8e);
+                if(s.special==SectorMap.SP_DOOR){int dk=SectorMap.doorKey(s);ui.icon(c,Icons.DOOR,sx(ce[0]),sy(ce[1])-dp(14),13,dk<0?0xddeee0d0:0xff000000|SectorMap.KEY_RGB[dk]);}}}}
         p.setStrokeCap(Paint.Cap.ROUND);
         for(SectorMap.Line ln:m.lines){SectorMap.Vertex a=m.vertices.get(ln.a),b=m.vertices.get(ln.b);boolean two=ln.back>=0;
             p.setColor(two?0xffff8a3a:0xfff0ddd0);p.setStrokeWidth(two?dp(1.5f):dp(2));c.drawLine(sx(a.x),sy(a.y),sx(b.x),sy(b.y),p);}
@@ -302,7 +304,7 @@ final class EditorView extends View implements Pointer.Aware {
         if(selKind==2){float[] e=edgeCoords(selSector,selEdge);if(e!=null){ui.caption(c,"Edge · sector "+(selSector+1),l+dp(10),ct+dp(18),Ui.TEXT_3);
             stat(c,l+dp(10),ct+dp(46),EditorViewFmt.f((float)Math.hypot(e[2]-e[0],e[3]-e[1]))+" m","Length");return;}}
         if(s>=0){SectorMap.Sector sec=m.sectors.get(s);
-            ui.caption(c,(selKind==1?"Sector ":"Under cursor · sector ")+(s+1)+(sec.special!=0?" · "+SectorMap.SPECIAL_NAMES[sec.special]:""),l+dp(10),ct+dp(18),Ui.TEXT_3);
+            ui.caption(c,(selKind==1?"Sector ":"Under cursor · sector ")+(s+1)+(sec.special!=0?" · "+SectorMap.SPECIAL_NAMES[sec.special]+(sec.special==SectorMap.SP_DOOR&&sec.tag>0?" ("+SectorMap.DOOR_KEYS[sec.tag]+")":""):""),l+dp(10),ct+dp(18),Ui.TEXT_3);
             float cw=(rr-l-dp(20))/3f;
             stat(c,l+dp(10),ct+dp(46),EditorViewFmt.f(sec.floor),"Floor");stat(c,l+dp(10)+cw,ct+dp(46),EditorViewFmt.f(sec.ceil),"Ceiling");
             stat(c,l+dp(10)+cw*2,ct+dp(46),ui.ellipsize(Tex.NAMES[sec.wallTex],12,1,cw-dp(4)),"Walls");
@@ -445,7 +447,10 @@ final class EditorView extends View implements Pointer.Aware {
     private void selectSector(int s){selKind=s>=0?1:0;selSector=s;}
     private void chooseSpecial(int s){
         SectorMap.Sector sec=map().sectors.get(s);
-        choose("Sector "+(s+1)+" special",SectorMap.SPECIAL_NAMES,sec.special,i->{if(ed.setSpecial(s,i,0))changed(SectorMap.SPECIAL_NAMES[i]);});
+        choose("Sector "+(s+1)+" special",SectorMap.SPECIAL_NAMES,sec.special,i->{
+            if(i!=SectorMap.SP_DOOR){if(ed.setSpecial(s,i,0))changed(SectorMap.SPECIAL_NAMES[i]);return;}
+            // a door: which key opens it (the sector's tag). Draw its ceiling at the height it opens to.
+            choose("Door · key",SectorMap.DOOR_KEYS,sec.special==SectorMap.SP_DOOR?sec.tag:0,k->{if(ed.setSpecial(s,SectorMap.SP_DOOR,k))changed(k==0?"Door":"Door · "+SectorMap.DOOR_KEYS[k]);});});
     }
     private void changed(String msg){autoSave();if(msg!=null)hint(msg);invalidate();}
     private void closeSector(){int n=map().sectors.size();if(ed.addSector(new ArrayList<>(pending))!=null){selectSector(n);pending.clear();changed("Sector created");}else hint(ed.error);}

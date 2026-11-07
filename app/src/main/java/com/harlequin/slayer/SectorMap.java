@@ -13,12 +13,18 @@ import java.util.HashMap;
  */
 final class SectorMap {
     // sector specials
-    static final int SP_NONE=0,SP_LAVA=1,SP_EXIT=2,SP_SECRET=3,SP_FLICKER=4,SP_DOOR=5,SP_DOOR_RED=6,SP_DOOR_BLUE=7,SP_DOOR_YELLOW=8;
-    static final String[] SPECIAL_NAMES={"None","Lava (hurts)","Exit","Secret","Flickering lights","Door","Door · red key","Door · blue key","Door · yellow key"};
-    /** Door specials: the sector's ceiling is the door (it rises to open); its ceiling texture is the door's face. */
-    static boolean isDoor(int special){return special>=SP_DOOR&&special<=SP_DOOR_YELLOW;}
-    /** The key a door needs (0 red, 1 blue, 2 yellow), or -1. */
-    static int doorKey(int special){return special>=SP_DOOR_RED&&special<=SP_DOOR_YELLOW?special-SP_DOOR_RED:-1;}
+    static final int SP_NONE=0,SP_LAVA=1,SP_EXIT=2,SP_SECRET=3,SP_FLICKER=4,SP_DOOR=5;
+    static final String[] SPECIAL_NAMES={"None","Lava (hurts)","Exit","Secret","Flickering lights","Door"};
+    /**
+     * A door is a sector special, as in Doom and RPG Pocket Editor: the sector's ceiling is the door. It sits on the
+     * floor when shut and rises to the ceiling height drawn in the editor when it opens; the walls above it (the
+     * sector's wall texture, or what is painted on them) are the door's face and rise with it. The sector's tag picks
+     * the key it needs: 0 none, 1 red, 2 blue, 3 yellow.
+     */
+    static boolean isDoor(Sector s){return s.special==SP_DOOR;}
+    /** The key a door sector needs (0 red, 1 blue, 2 yellow), or -1. */
+    static int doorKey(Sector s){return s.special==SP_DOOR&&s.tag>=1&&s.tag<=3?s.tag-1:-1;}
+    static final String[] DOOR_KEYS={"No key","Red key","Blue key","Yellow key"};
     // thing types
     static final int T_DEMON=0,T_HEALTH=1,T_SHELLS=2,T_LAMP_WARM=3,T_LAMP_RED=4,T_LAMP_BLUE=5,T_LAMP_WHITE=6,T_PLAYER=7,T_KEY_RED=8,T_KEY_BLUE=9,T_KEY_YELLOW=10;
     static final String[] THING_NAMES={"Demon","Health orb","Energy cells","Lamp · warm","Lamp · hellfire","Lamp · cold blue","Lamp · white","Player start","Red key","Blue key","Yellow key"};
@@ -78,7 +84,7 @@ final class SectorMap {
                 case "player":m.playerX=Float.parseFloat(p[1]);m.playerY=Float.parseFloat(p[2]);m.facing=Float.parseFloat(p[3]);break;
                 case "v":m.vertices.add(new Vertex(Float.parseFloat(p[1]),Float.parseFloat(p[2])));break;
                 case "s":{Sector s=new Sector();s.floor=Float.parseFloat(p[1]);s.ceil=Float.parseFloat(p[2]);s.floorTex=Integer.parseInt(p[3]);s.ceilTex=Integer.parseInt(p[4]);s.wallTex=Integer.parseInt(p[5]);
-                    s.special=Integer.parseInt(p[6]);s.tag=Integer.parseInt(p[7]);int n=Integer.parseInt(p[8]);for(int i=0;i<n;i++)s.loop.add(Integer.parseInt(p[9+i]));m.sectors.add(s);break;}
+                    s.special=Integer.parseInt(p[6]);s.tag=Integer.parseInt(p[7]);if(s.special>=6&&s.special<=8){s.tag=s.special-5;s.special=SP_DOOR;}   /* keyed doors were their own specials for a day */int n=Integer.parseInt(p[8]);for(int i=0;i<n;i++)s.loop.add(Integer.parseInt(p[9+i]));m.sectors.add(s);break;}
                 case "w":m.wallTex.put(wallKey(Integer.parseInt(p[1]),Integer.parseInt(p[2])),Integer.parseInt(p[3]));break;
                 case "t":{Thing t=new Thing(Integer.parseInt(p[1]),Float.parseFloat(p[2]),Float.parseFloat(p[3]),Float.parseFloat(p[4]));if(p.length>5)t.skills=Integer.parseInt(p[5]);m.things.add(t);break;}
             }}

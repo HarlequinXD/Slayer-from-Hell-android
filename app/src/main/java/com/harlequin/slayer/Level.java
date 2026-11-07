@@ -14,12 +14,14 @@ final class Level {
     /** One raster cell, sampled at its centre. */
     static final class Cell {boolean solid,lava,shut;float floor,ceil;int floorMat,sector=-1,door=-1;}
     /**
-     * A door: a sector whose ceiling comes down to its floor. It rises when she walks up to it (a keyed door only if she
-     * carries its key) and then stays open. Demons never open doors. While it isn't fully open its cells are shut
-     * to navigation; collision and sight use the sector's live ceiling.
+     * A door: a sector with the Door special (as in RPG Pocket Editor). Its ceiling is the door: shut, it rests on the
+     * floor; opened, it rises to the height drawn in the editor, waits, and comes back down, going back up if anyone
+     * is under it. Walking up to it opens it (a keyed door only for her, carrying its key); demons open plain doors.
+     * The walls above it rise with it. Cells of a keyed door are shut to navigation while it is too low to pass.
      */
-    static final class Door {final int sector,key;final float floor,top,cx,cy;float open;boolean opening;Door(int s,int k,float f,float t,float x,float y){sector=s;key=k;floor=f;top=t;cx=x;cy=y;}
-        boolean passable(){return open>.85f;}}
+    static final class Door {final int sector,key;final float floor,top,cx,cy;int state;float wait;boolean hold;
+        Door(int s,int k,float f,float t,float x,float y){sector=s;key=k;floor=f;top=t;cx=x;cy=y;}}
+    static final int D_CLOSED=0,D_OPENING=1,D_OPEN=2,D_CLOSING=3;
     static final class Light {float x,y,z,r,g,b,radius;boolean flicker;Light(float x,float y,float z,int rgb,float i,float radius,boolean fl){this.x=x;this.y=y;this.z=z;r=((rgb>>16)&255)/255f*i;g=((rgb>>8)&255)/255f*i;b=(rgb&255)/255f*i;this.radius=radius;flicker=fl;}}
     /** A health orb or a box of shells lying in the level. */
     static final class Pickup {final int type;final float x,y,z;boolean taken;Pickup(int t,float x,float y,float z){type=t;this.x=x;this.y=y;this.z=z;}}
@@ -52,7 +54,8 @@ final class Level {
         ox=m.minX()-1;oy=m.minY()-1;W=(int)Math.ceil((m.maxX()-m.minX()+2)/CELL);H=(int)Math.ceil((m.maxY()-m.minY()+2)/CELL);
         cells=new Cell[W*H];
         for(int j=0;j<H;j++)for(int i=0;i<W;i++){Cell c=new Cell();int s=m.sectorAt(cx(i),cy(j));c.sector=s;
-            if(s<0){c.solid=true;}else{SectorMap.Sector S=m.sectors.get(s);c.floor=S.floor;c.ceil=S.ceil;c.floorMat=S.floorTex;c.lava=S.special==SectorMap.SP_LAVA||Tex.hurts(S.floorTex);c.solid=S.ceil-S.floor<.05f;}
+            if(s<0){c.solid=true;}else{SectorMap.Sector S=m.sectors.get(s);c.floor=S.floor;c.ceil=S.ceil;c.floorMat=S.floorTex;c.lava=S.special==SectorMap.SP_LAVA||Tex.hurts(S.floorTex);c.solid=S.ceil-S.floor<.05f;
+                if(SectorMap.isDoor(S)){c.solid=false;c.ceil=S.ceil-S.floor>.3f?S.ceil:lowestNeighbourCeil(s)-.1f;}}   // a door's cells: as open (the door shuts them while it can't be passed)
             cells[j*W+i]=c;}
         spawnX=m.playerX;spawnY=m.playerY;spawnAngle=m.facing;
         for(SectorMap.Thing t:m.things){
@@ -64,43 +67,82 @@ final class Level {
                 lights.add(new Light(t.x,t.y,z,SectorMap.LAMP_RGB[t.type],t.type==SectorMap.T_LAMP_WHITE?3.6f:3.2f,Math.max(9,Math.min(16,(S.ceil-S.floor)*2.2f)),fl));}}
         glowLights(m);
         lightBits=new long[W*H];lightMask=new int[W*H];bakeLights();pickLights(spawnX,spawnY,true);
-        for(int s=0;s<m.sectors.size();s++){SectorMap.Sector S=m.sectors.get(s);if(!SectorMap.isDoor(S.special))continue;float[] c=m.centroid(S);
-            doors.add(new Door(s,SectorMap.doorKey(S.special),S.floor,S.ceil,c[0],c[1]));}
+        for(int s=0;s<m.sectors.size();s++){SectorMap.Sector S=m.sectors.get(s);if(!SectorMap.isDoor(S))continue;float[] c=m.centroid(S);
+            float top=S.ceil-S.floor>.3f?S.ceil:lowestNeighbourCeil(s)-.1f;   // a door drawn shut opens to its neighbours' ceiling
+            doors.add(new Door(s,SectorMap.doorKey(S),S.floor,Math.max(top,S.floor+.3f),c[0],c[1]));}
         for(Cell c:cells)if(c.sector>=0)for(int d=0;d<doors.size();d++)if(doors.get(d).sector==c.sector)c.door=d;
         resetDoors();
     }
 
     // ------------------------------------------------------------------ doors
+    static final float DOOR_SPEED=2.5f,DOOR_WAIT=4f,DOOR_REACH=1.5f,DEMON_REACH=1.1f;
+    SectorMap.Sector doorSector(Door d){return map.sectors.get(d.sector);}
+    float doorHeight(Door d){return doorSector(d).ceil-d.floor;}
+    boolean passable(Door d){return doorHeight(d)>=Nav.HEADROOM;}
     /** Every door shut (a new level, or she died and it starts over). */
-    void resetDoors(){for(Door d:doors){d.open=0;d.opening=false;setDoor(d);}navVersion++;}
-    private void setDoor(Door d){float e=d.open*d.open*(3-2*d.open);map.sectors.get(d.sector).ceil=d.floor+(d.top-d.floor)*e;
-        boolean shut=!d.passable();int di=doors.indexOf(d);for(Cell c:cells)if(c.door==di&&c.shut!=shut){c.shut=shut;}}
-    /** Opens a door at once (tests, the editor's play-from-here). */
-    void openDoor(Door d){d.opening=true;d.open=1;setDoor(d);navVersion++;}
-    static final float DOOR_REACH=2.4f,DOOR_TIME=1.1f;
-    /** Bits of DOOR_* results from one step: a door started opening, or she is at a door she has no key for. */
-    static final int DOOR_OPENED=1,DOOR_LOCKED=2;int lockedKey=-1;
-    /** Moves the doors; she opens the ones she walks up to (keyed ones only with the key; keys = bit per key). */
-    int updateDoors(float dt,float px,float py,float pz,int keys){
-        int ev=0;lockedKey=-1;
-        for(Door d:doors){
-            if(!d.opening&&Math.hypot(px-d.cx,py-d.cy)<DOOR_REACH+doorRadius(d)&&Math.abs(pz-d.floor)<1.6f){
-                if(d.key<0||(keys&(1<<d.key))!=0){d.opening=true;ev|=DOOR_OPENED;}else{ev|=DOOR_LOCKED;lockedKey=d.key;}}
-            if(d.opening&&d.open<1){boolean was=d.passable();d.open=Math.min(1,d.open+dt/DOOR_TIME);setDoor(d);if(was!=d.passable())navVersion++;}}
+    void resetDoors(){for(Door d:doors){d.state=D_CLOSED;d.wait=0;d.hold=false;doorSector(d).ceil=d.floor;}shutCells();}
+    /** Opens a door at once and keeps it open (tests, the editor's 3D view). */
+    void openDoor(Door d){d.state=D_OPEN;d.hold=true;doorSector(d).ceil=d.top;shutCells();}
+    private void shutCells(){
+        boolean changed=false;
+        for(Cell c:cells){if(c.door<0)continue;Door d=doors.get(c.door);boolean shut=d.key>=0&&!passable(d);if(c.shut!=shut){c.shut=shut;changed=true;}}
+        if(changed)navVersion++;
+    }
+    /** Results of one step (bits): a door began to open, began to close, or she is at a door she has no key for. */
+    static final int DOOR_OPENED=1,DOOR_CLOSING=2,DOOR_LOCKED=4;int lockedKey=-1;
+    /** Where the last door event happened (for its sound). */
+    float eventX,eventY,eventZ;
+    /**
+     * Moves the doors. She opens the doors she walks up to (keys: a bit per key she carries); `others` are the demons
+     * ({x, y, z}), who open plain doors and, like her, stop a door closing on them.
+     */
+    int updateDoors(float dt,float px,float py,float pz,int keys,java.util.List<float[]> others){
+        int ev=0;lockedKey=-1;boolean moved=false;
+        for(Door d:doors){SectorMap.Sector S=doorSector(d);
+            boolean her=Math.abs(pz-d.floor)<1.7f&&distTo(d,px,py)<DOOR_REACH,want=false;
+            if(her){if(d.key<0||(keys&(1<<d.key))!=0)want=true;else if(d.state==D_CLOSED||d.state==D_CLOSING){ev|=DOOR_LOCKED;lockedKey=d.key;}}
+            boolean someone=her&&want;
+            if(d.key<0&&!want&&others!=null)for(float[] o:others)if(Math.abs(o[2]-d.floor)<1.7f&&distTo(d,o[0],o[1])<DEMON_REACH){want=true;someone=true;break;}
+            if(want&&(d.state==D_CLOSED||d.state==D_CLOSING)){d.state=D_OPENING;ev|=DOOR_OPENED;event(d);}
+            switch(d.state){
+                case D_OPENING:S.ceil=Math.min(d.top,S.ceil+DOOR_SPEED*dt);moved=true;if(S.ceil>=d.top){d.state=D_OPEN;d.wait=DOOR_WAIT;}break;
+                case D_OPEN:if(d.hold)break;if(someone||occupied(d,px,py,pz,others,S.ceil-.5f))d.wait=DOOR_WAIT;else if((d.wait-=dt)<=0){d.state=D_CLOSING;ev|=DOOR_CLOSING;event(d);}break;
+                case D_CLOSING:{float next=Math.max(d.floor,S.ceil-DOOR_SPEED*dt);
+                    if(occupied(d,px,py,pz,others,next)){d.state=D_OPENING;ev|=DOOR_OPENED;event(d);break;}   // someone under it: back up
+                    S.ceil=next;moved=true;if(next<=d.floor)d.state=D_CLOSED;break;}
+                default:break;}}
+        if(moved)shutCells();
         return ev;
     }
-    /** About half the door's width (its centroid to its farthest corner). */
-    float doorRadius(Door d){float r=0;for(int id:map.sectors.get(d.sector).loop){SectorMap.Vertex v=map.vertices.get(id);r=Math.max(r,(float)Math.hypot(v.x-d.cx,v.y-d.cy));}return Math.min(r,2.5f);}
-    /** The door slab in world space (its sides and underside), from z0 up to z1: 11-float vertices. */
-    float[] doorSlab(Door d,float z0,float z1){
-        FloatList[] out=new FloatList[Tex.COUNT];SectorMap.Sector S=map.sectors.get(d.sector);int mat=S.ceilTex;out[mat]=new FloatList();
-        int n=S.loop.size();boolean ccw=map.area(S)>0;
-        for(int i=0;i<n;i++){SectorMap.Vertex a=map.vertices.get(S.loop.get(i)),b=map.vertices.get(S.loop.get((i+1)%n));
-            if(ccw)wall(out,mat,b.x,b.y,a.x,a.y,z0,z1);else wall(out,mat,a.x,a.y,b.x,b.y,z0,z1);}   // facing out of the door
-        float[] tri=map.triangulate(d.sector);float t=tile(mat);
-        for(int k=0;k+5<tri.length;k+=6)for(int v=2;v>=0;v--){float x=tri[k+v*2],y=tri[k+v*2+1];out[mat].add(x,y,z0,0,0,-1,-1,0,0,-x*t,y*t);}
-        return out[mat].toArray();
+    private void event(Door d){eventX=d.cx;eventY=d.cy;eventZ=d.floor+1;}
+    /** Is anyone (her or a demon) standing in the door, tall enough to reach a ceiling at `ceil`? */
+    private boolean occupied(Door d,float px,float py,float pz,java.util.List<float[]> others,float ceil){
+        if(distTo(d,px,py)<Player.RADIUS&&pz+Player.HEIGHT>ceil)return true;
+        if(others!=null)for(float[] o:others)if(distTo(d,o[0],o[1])<.45f&&o[2]+2.2f>ceil)return true;
+        return false;
     }
+    /** Distance from (x,y) to the door's sector (0 inside it). */
+    float distTo(Door d,float x,float y){
+        SectorMap.Sector S=doorSector(d);if(map.sectorAt(x,y)==d.sector)return 0;float best=1e9f;int n=S.loop.size();
+        for(int i=0;i<n;i++){SectorMap.Vertex a=map.vertices.get(S.loop.get(i)),b=map.vertices.get(S.loop.get((i+1)%n));best=Math.min(best,SectorMap.segDist(x,y,a.x,a.y,b.x,b.y));}
+        return best;
+    }
+    private boolean isDoorSector(int si){return si>=0&&SectorMap.isDoor(map.sectors.get(si));}
+    /**
+     * The moving part of the level as it is now: each door's ceiling and the walls above it, pegged to the door's
+     * bottom edge so the texture rises with it (one list per material). The static build leaves these out.
+     */
+    void doorGeometry(FloatList[] out){
+        for(Door d:doors){SectorMap.Sector S=doorSector(d);float t=tile(S.ceilTex);
+            if(S.ceil-S.floor>.02f){float[] tri=map.triangulate(d.sector);FloatList o=list(out,S.ceilTex);
+                for(int k=0;k+5<tri.length;k+=6)for(int v=2;v>=0;v--){float x=tri[k+v*2],y=tri[k+v*2+1];o.add(x,y,S.ceil,0,0,-1,-1,0,0,-x*t,y*t);}}}
+        for(SectorMap.Line L:map.lines){if(L.front<0||L.back<0)continue;boolean fd=isDoorSector(L.front),bd=isDoorSector(L.back);if(!fd&&!bd)continue;
+            SectorMap.Sector F=map.sectors.get(L.front),B=map.sectors.get(L.back);SectorMap.Vertex a=map.vertices.get(L.a),b=map.vertices.get(L.b);
+            int ab=map.wallTexture(L.a,L.b,-1),ba=map.wallTexture(L.b,L.a,-1);
+            if(B.ceil<F.ceil-1e-3f){int mat=ab>=0?ab:B.wallTex;wall(out,mat,a.x,a.y,b.x,b.y,Math.max(B.ceil,F.floor),F.ceil,B.ceil);}
+            if(F.ceil<B.ceil-1e-3f){int mat=ba>=0?ba:F.wallTex;wall(out,mat,b.x,b.y,a.x,a.y,Math.max(F.ceil,B.floor),B.ceil,F.ceil);}}
+    }
+    private static FloatList list(FloatList[] out,int mat){if(out[mat]==null)out[mat]=new FloatList();return out[mat];}
 
     // ------------------------------------------------------------------ streamed lights
     /**
@@ -161,8 +203,9 @@ final class Level {
     /** Vertex: x,y,z, normal, tangent, u,v (11 floats). Returns one float list per material. */
     @SuppressWarnings("unchecked")
     ArrayList<float[]>[] build(){
-        float[] keep=new float[doors.size()];for(int i=0;i<keep.length;i++){Door d=doors.get(i);SectorMap.Sector S=map.sectors.get(d.sector);keep[i]=S.ceil;S.ceil=d.top;}   // doorways are built open; the slabs are drawn on their own
-        try{return buildOpen();}finally{for(int i=0;i<keep.length;i++)map.sectors.get(doors.get(i).sector).ceil=keep[i];}
+        float[] keep=new float[doors.size()];for(int i=0;i<keep.length;i++){Door d=doors.get(i);SectorMap.Sector S=map.sectors.get(d.sector);keep[i]=S.ceil;S.ceil=d.top;}   // built open; the moving parts are drawn by doorGeometry
+        staticOnly=true;
+        try{return buildOpen();}finally{staticOnly=false;for(int i=0;i<keep.length;i++)map.sectors.get(doors.get(i).sector).ceil=keep[i];}
     }
     @SuppressWarnings("unchecked")
     private ArrayList<float[]>[] buildOpen(){
@@ -170,7 +213,7 @@ final class Level {
         for(int si=0;si<map.sectors.size();si++){SectorMap.Sector s=map.sectors.get(si);float[] tri=map.triangulate(si);
             float tf=tile(s.floorTex),tc=tile(s.ceilTex);
             for(int k=0;k+5<tri.length;k+=6)for(int v=0;v<3;v++){float x=tri[k+v*2],y=tri[k+v*2+1];out[s.floorTex].add(x,y,s.floor,0,0,1,1,0,0,x*tf,y*tf);}
-            if(s.ceil-s.floor>.01f)for(int k=0;k+5<tri.length;k+=6)for(int v=2;v>=0;v--){float x=tri[k+v*2],y=tri[k+v*2+1];out[s.ceilTex].add(x,y,s.ceil,0,0,-1,-1,0,0,-x*tc,y*tc);}}
+            if(s.ceil-s.floor>.01f&&!SectorMap.isDoor(s))for(int k=0;k+5<tri.length;k+=6)for(int v=2;v>=0;v--){float x=tri[k+v*2],y=tri[k+v*2+1];out[s.ceilTex].add(x,y,s.ceil,0,0,-1,-1,0,0,-x*tc,y*tc);}}
         walls((mat,ax,ay,bx,by,z0,z1)->wall(out,mat,ax,ay,bx,by,z0,z1));
         ArrayList<float[]>[] res=new ArrayList[Tex.COUNT];
         for(int i=0;i<res.length;i++){res[i]=new ArrayList<>();res[i].add(out[i].toArray());}
@@ -188,17 +231,22 @@ final class Level {
             // steps and ledges below, lintels above; each face looks into the sector it is seen from
             if(B.floor>F.floor+1e-3f)out.wall(ab>=0?ab:B.wallTex,a.x,a.y,b.x,b.y,F.floor,Math.min(B.floor,F.ceil));
             if(F.floor>B.floor+1e-3f)out.wall(ba>=0?ba:F.wallTex,b.x,b.y,a.x,a.y,B.floor,Math.min(F.floor,B.ceil));
+            if(staticOnly&&(SectorMap.isDoor(F)||SectorMap.isDoor(B)))continue;   // above a door: it moves (doorGeometry)
             if(B.ceil<F.ceil-1e-3f)out.wall(ab>=0?ab:B.wallTex,a.x,a.y,b.x,b.y,Math.max(B.ceil,F.floor),F.ceil);
             if(F.ceil<B.ceil-1e-3f)out.wall(ba>=0?ba:F.wallTex,b.x,b.y,a.x,a.y,Math.max(F.ceil,B.floor),B.ceil);}
     }
-    static final class FloatList{float[] a=new float[1024];int n;void add(float... v){if(n+v.length>a.length)a=java.util.Arrays.copyOf(a,Math.max(a.length*2,n+v.length));System.arraycopy(v,0,a,n,v.length);n+=v.length;}float[] toArray(){return java.util.Arrays.copyOf(a,n);}}
+    static final class FloatList{float[] a=new float[1024];int n;void clear(){n=0;}void add(float... v){if(n+v.length>a.length)a=java.util.Arrays.copyOf(a,Math.max(a.length*2,n+v.length));System.arraycopy(v,0,a,n,v.length);n+=v.length;}float[] toArray(){return java.util.Arrays.copyOf(a,n);}}
     /** A wall along a→b from z0 up to z1, facing the left side of a→b. */
-    private static void wall(FloatList[] out,int mat,float ax,float ay,float bx,float by,float z0,float z1){
-        if(z1-z0<1e-3f)return;FloatList o=out[mat];float t=tile(mat);
+    private boolean staticOnly;
+    private float lowestNeighbourCeil(int s){float best=1e9f;for(SectorMap.Line L:map.lines){int o=L.front==s?L.back:L.back==s?L.front:-2;if(o>=0)best=Math.min(best,map.sectors.get(o).ceil);}return best>1e8f?map.sectors.get(s).floor+3:best;}
+    private static void wall(FloatList[] out,int mat,float ax,float ay,float bx,float by,float z0,float z1){wall(out,mat,ax,ay,bx,by,z0,z1,0);}
+    /** A wall from z0 to z1; `peg` is the height its texture is fixed to (a door's wall rises with the door). */
+    private static void wall(FloatList[] out,int mat,float ax,float ay,float bx,float by,float z0,float z1,float peg){
+        if(z1-z0<1e-3f)return;FloatList o=list(out,mat);float t=tile(mat);
         float dx=bx-ax,dy=by-ay,l=(float)Math.hypot(dx,dy);if(l<1e-4f)return;
         float nx=-dy/l,ny=dx/l;            // left of a→b
         float tx=ny,ty=-nx;               // tangent = cross(B,N) with B = (0,0,-1)
-        float ua=(ax*tx+ay*ty)*t,ub=(bx*tx+by*ty)*t,v0=-z0*t,v1=-z1*t;
+        float ua=(ax*tx+ay*ty)*t,ub=(bx*tx+by*ty)*t,v0=-(z0-peg)*t,v1=-(z1-peg)*t;
         float[][] P={{ax,ay,z0,ua,v0},{bx,by,z0,ub,v0},{bx,by,z1,ub,v1},{ax,ay,z1,ua,v1}};
         int[] idx={0,2,1,0,3,2};
         for(int k:idx)o.add(P[k][0],P[k][1],P[k][2],nx,ny,0,tx,ty,0,P[k][3],P[k][4]);

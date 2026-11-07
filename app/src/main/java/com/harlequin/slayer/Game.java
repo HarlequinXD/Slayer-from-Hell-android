@@ -200,7 +200,7 @@ final class Game implements GLSurfaceView.Renderer {
         if(pl.bumpSpeed>0){sfx.play(Sfx.LAND,Math.min(1,pl.bumpSpeed/5)*.7f,1.2f);hero.bump(pl.bumpNx,pl.bumpNy,pl.bumpSpeed);}
         updateSaw(dt);
         if(hero.steps>0&&pl.onGround)sfx.play(Sfx.STEP,.3f+.15f*hero.run,.9f+fx.rng.nextFloat()*.2f);
-        if(pl.deaths!=lastDeaths){lastDeaths=pl.deaths;enemies.reset();for(Level.Pickup pk:level.pickups)pk.taken=false;cells=Math.max(cells,60);banner="YOU DIED";bannerT=2.5f;}   // she died: the level starts over
+        if(pl.deaths!=lastDeaths){lastDeaths=pl.deaths;enemies.reset();for(Level.Pickup pk:level.pickups)pk.taken=false;cells=Math.max(cells,Math.round(60*Skill.ammo()));banner="YOU DIED";bannerT=2.5f;}   // she died: the level starts over
         pickups(dt);
         playTime+=dt;bannerT=Math.max(0,bannerT-dt);
         {SectorMap.Sector here=level.sectorAt(pl.x,pl.y);if(!completed&&here!=null&&here.special==SectorMap.SP_EXIT&&pl.onGround){completed=true;if(listener!=null)listener.levelComplete(demonsTotal-enemies.alive(),demonsTotal,playTime);}}
@@ -318,7 +318,7 @@ final class Game implements GLSurfaceView.Renderer {
 
     // ------------------------------------------------------------------ the warden's hand cannon (left forearm)
     /** Energy cells (ammo) and the time until the cannon can fire again. */
-    int cells=60;private float cannonCool,dryCool;static final int MAX_CELLS=150;
+    int cells=Math.round(60*Skill.ammo());private float cannonCool,dryCool;static final int MAX_CELLS=150;
     private void fireCannon(float dt,boolean fire){
         cannonCool-=dt;dryCool-=dt;
         if(!fire||cannonCool>0||hero.cannonMat==null)return;
@@ -346,7 +346,7 @@ final class Game implements GLSurfaceView.Renderer {
             else fx.cell(p.x,p.y,p.z+bob-.1f,time+p.x);
             float dx=p.x-pl.x,dy=p.y-pl.y;if(editMode||dx*dx+dy*dy>.85f*.85f||Math.abs(p.z-pl.z)>1.2f)continue;
             if(p.type==SectorMap.T_HEALTH){if(pl.health>=100)continue;pl.health=Math.min(100,pl.health+25);sfx.play(Sfx.PICKUP,.9f,1.2f);banner="+25 HEALTH";}
-            else{if(cells>=MAX_CELLS)continue;cells=Math.min(MAX_CELLS,cells+15);sfx.play(Sfx.PICKUP,.8f,.85f);sfx.play(Sfx.CHARGE,.4f,1.6f);banner="+15 CELLS";}
+            else{if(cells>=MAX_CELLS)continue;int add=Math.round(15*Skill.ammo());cells=Math.min(MAX_CELLS,cells+add);sfx.play(Sfx.PICKUP,.8f,.85f);sfx.play(Sfx.CHARGE,.4f,1.6f);banner="+"+add+" CELLS";}
             bannerT=1.4f;p.taken=true;}
     }
 

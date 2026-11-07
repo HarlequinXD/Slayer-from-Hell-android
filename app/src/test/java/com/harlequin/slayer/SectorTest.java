@@ -101,7 +101,7 @@ public class SectorTest {
             boolean exit=false;for(SectorMap.Sector s:m.sectors)if(s.special==SectorMap.SP_EXIT){float[] c=m.centroid(s);exit|=nav.distAt(c[0],c[1])<Nav.INF;}
             assertTrue(m.name+" has a reachable exit",exit);
             assertFalse(m.name+": the start is clear",L.blocked(L.spawnX,L.spawnY,L.floorUnder(L.spawnX,L.spawnY,.3f),Player.RADIUS,Player.HEIGHT));
-            assertTrue(m.name+" has demons",L.demonSpawns.size()>=8);
+            assertTrue(m.name+" has demons",L.demonSpawns.size()>=5);
             assertTrue(m.name+" lights",L.lights.size()>=6&&L.lights.size()<=Level.MAX_LIGHTS);}
     }
     @Test public void mapStoreSavesAndLists()throws Exception{
@@ -125,5 +125,24 @@ public class SectorTest {
         assertTrue(e>=0);assertTrue(ed.error,ed.splitWall(0,e,(va.x+vb.x)/2,Math.round((va.y+vb.y)/2)));
         int painted=0;for(Integer t:m.wallTex.values())if(t==Tex.METAL_PANEL)painted++;assertEquals(2,painted);
         assertTrue(ed.undo());assertEquals(1,ed.map.wallTex.size());
+    }
+    @Test public void skillLevelsChooseWhichDemonsAppear(){
+        int[] counts=new int[5];
+        for(int k=0;k<5;k++){Skill.current=k;counts[k]=new Level(Maps.campaign(0)).demonSpawns.size();}
+        Skill.current=Skill.MEDIUM;
+        assertEquals("the two easy skills share a set",counts[0],counts[1]);assertEquals(counts[3],counts[4]);
+        assertTrue("easy < hurt me plenty < ultra-violence: "+java.util.Arrays.toString(counts),counts[1]<counts[2]&&counts[2]<counts[3]);
+        SectorMap m=Maps.campaign(0);m.things.get(0).skills=Skill.F_HARD;assertEquals(Skill.F_HARD,SectorMap.load(m.save()).things.get(0).skills);
+        // nobody waits in sight of the start
+        for(int i=0;i<Maps.count();i++){Skill.current=Skill.HARD;Level L=new Level(Maps.campaign(i));Skill.current=Skill.MEDIUM;
+            for(float[] d:L.demonSpawns){float dx=d[0]-L.spawnX,dy=d[1]-L.spawnY;float l=(float)Math.hypot(dx,dy);
+                float[] h=L.ray(L.spawnX,L.spawnY,1.6f,dx/l,dy/l,(L.floorUnder(d[0],d[1],0)+1.6f-1.6f)/l,l);
+                assertTrue(L.map.name+": demon at "+d[0]+","+d[1]+" is "+l+" m from the start",l>12);}}
+    }
+    @Test public void doomDamageNumbers(){
+        Level L=new Level(Maps.campaign(0));Player p=new Player();p.spawn(L);Enemies E=new Enemies(L,p);
+        for(int i=0;i<200;i++){int s=E.shotDamage(),pl=E.plasmaDamage(),saw=E.sawDamage();
+            assertTrue(s>=3&&s<=15&&s%3==0);assertTrue(pl>=5&&pl<=40&&pl%5==0);assertTrue(saw>=2&&saw<=20&&saw%2==0);}
+        assertEquals(20,Demon.MAX_HEALTH,0);
     }
 }

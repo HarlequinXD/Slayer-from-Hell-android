@@ -235,5 +235,7 @@ final class MapEditor {
     boolean moveThing(int i,float x,float y){if(map.sectorAt(x,y)<0){error="Things must be inside a sector";return false;}push();
         if(i==-2){map.playerX=x;map.playerY=y;}else if(i>=0&&i<map.things.size()){map.things.get(i).x=x;map.things.get(i).y=y;}done();return true;}
     boolean rotateThing(int i,float by){push();if(i==-2)map.facing+=by;else if(i>=0&&i<map.things.size())map.things.get(i).angle+=by;else return false;done();return true;}
+    /** Which difficulties a thing appears on (Skill.F_* bits, at least one). */
+    boolean setThingSkills(int i,int mask){if(i<0||i>=map.things.size()||mask==0){error=mask==0?"A thing must appear on at least one difficulty":"Nothing selected";return false;}push();map.things.get(i).skills=mask;done();return true;}
     boolean deleteThing(int i){if(i<0||i>=map.things.size()){error=i==-2?"The player start can't be deleted":"Nothing to delete";return false;}push();map.things.remove(i);done();return true;}
 }

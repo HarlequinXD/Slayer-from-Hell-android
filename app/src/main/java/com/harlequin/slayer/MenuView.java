@@ -25,8 +25,10 @@ final class MenuView extends View {
         void playCampaign(int index);void playCustom(String id);void editMap(String id,SectorMap from);void quit();
         void resume();void restart();void leaveGame();void nextLevel();
     }
-    static final int MAIN=0,CAMPAIGN=1,CUSTOM=2,SETTINGS=3,PAUSE=4,COMPLETE=5;
-    private static final int H_ITEM=100,H_BACK=1,H_NEW=2,H_PLAY=300,H_EDIT=400,H_DEL=500,H_SET=600;
+    static final int MAIN=0,CAMPAIGN=1,CUSTOM=2,SETTINGS=3,PAUSE=4,COMPLETE=5,SKILL=6;
+    private static final int H_ITEM=100,H_BACK=1,H_NEW=2,H_PLAY=300,H_EDIT=400,H_DEL=500,H_SET=600,H_SKILL=700;
+    /** What to play once a skill is chosen: a campaign map, or a custom level's id. */
+    private int pendingCampaign=-1;private String pendingCustom;private int skillFrom=MAIN;
 
     private final Ui ui;private final Paint p,glow=new Paint(Paint.ANTI_ALIAS_FLAG);private final Path path=new Path();private final RectF r=new RectF();
     private final Host host;private final MapStore store;private final SharedPreferences prefs;
@@ -49,7 +51,7 @@ final class MenuView extends View {
 
     // ---------------------------------------------------------------- settings
     static void loadSettings(Context c){SharedPreferences s=c.getSharedPreferences("slayer",0);
-        Game.lookSens=s.getFloat("sens",.0055f);Game.invertLook=s.getBoolean("invert",false);Game.RENDER_LINES=s.getInt("lines",270);Hud.showFps=s.getBoolean("fps",true);}
+        Skill.current=Math.max(0,Math.min(4,s.getInt("skill",Skill.MEDIUM)));Game.lookSens=s.getFloat("sens",.0055f);Game.invertLook=s.getBoolean("invert",false);Game.RENDER_LINES=s.getInt("lines",270);Hud.showFps=s.getBoolean("fps",true);}
     private void saveSettings(){prefs.edit().putFloat("sens",Game.lookSens).putBoolean("invert",Game.invertLook).putInt("lines",Game.RENDER_LINES).putBoolean("fps",Hud.showFps).apply();}
 
     // ---------------------------------------------------------------- drawing
@@ -64,6 +66,7 @@ final class MenuView extends View {
             case CAMPAIGN:header(c,w,"CAMPAIGN","Fight through hell, one map at a time");campaign(c,w,h);break;
             case CUSTOM:header(c,w,"CUSTOM LEVELS","Levels you have built in the editor");custom(c,w,h);break;
             case SETTINGS:header(c,w,"SETTINGS","Controls and graphics");settings(c,w,h);break;
+            case SKILL:header(c,w,"CHOOSE YOUR SKILL","As in Doom: the harder the skill, the more demons");skills(c,w,h);break;
             case PAUSE:pause(c,w,h);break;
             case COMPLETE:complete(c,w,h);break;
         }
@@ -144,6 +147,12 @@ final class MenuView extends View {
             r.set(bx-dp(88),t+dp(14),bx,t+rowH-dp(14));ui.button(c,r,Icons.PLAY,"Play",Ui.PRIMARY);ui.hit(r,H_PLAY+100+i);}
         c.restoreToCount(save);
     }
+    private void skills(Canvas c,float w,float h){
+        float l=dp(80),rr=Math.min(w-dp(40),l+dp(560)),gap=dp(8),top=dp(92),bh=Math.min(dp(60),(h-top-dp(16)-gap*4)/5);
+        for(int i=0;i<5;i++){float t=top+i*(bh+gap);
+            entry(c,l,t,rr,t+bh,Icons.SKULL,Skill.NAMES[i],Skill.BLURBS[i],H_SKILL+i,i==Skill.current);
+            for(int k=0;k<=i;k++)ui.icon(c,Icons.SKULL,rr-dp(20)-k*dp(18),t+bh*.5f,14,i==4?0xffff3a2a:0xc0ff8a5a);}
+    }
     private static final int[] LINES={200,270,360,540};
     private void settings(Canvas c,float w,float h){
         float l=dp(80),rr=Math.min(w-dp(40),l+dp(560)),rowH=dp(58),gap=dp(10),top=dp(96);
@@ -187,13 +196,15 @@ final class MenuView extends View {
         return true;
     }
     private void tap(int id){
-        if(id==H_BACK){show(MAIN);return;}
+        if(id==H_BACK){show(page==SKILL?skillFrom:MAIN);return;}
+        if(page==SKILL&&id>=H_SKILL&&id<H_SKILL+5){Skill.current=id-H_SKILL;prefs.edit().putInt("skill",Skill.current).apply();
+            if(pendingCustom!=null)host.playCustom(pendingCustom);else if(pendingCampaign>=0)host.playCampaign(pendingCampaign);return;}
         if(page==MAIN&&id>=H_ITEM&&id<H_ITEM+5){switch(id-H_ITEM){case 0:show(CAMPAIGN);break;case 1:show(CUSTOM);break;case 2:newLevel();break;case 3:show(SETTINGS);break;default:host.quit();}return;}
-        if(page==CAMPAIGN){if(id>=H_PLAY&&id<H_PLAY+Maps.count()){host.playCampaign(id-H_PLAY);return;}
+        if(page==CAMPAIGN){if(id>=H_PLAY&&id<H_PLAY+Maps.count()){pendingCampaign=id-H_PLAY;pendingCustom=null;skillFrom=CAMPAIGN;show(SKILL);return;}
             if(id>=H_EDIT&&id<H_EDIT+Maps.count()){SectorMap m=Maps.campaign(id-H_EDIT);m.name=m.name+" (copy)";host.editMap(null,m);return;}}
         if(page==CUSTOM){
             if(id==H_NEW){newLevel();return;}
-            if(id>=H_PLAY+100&&id<H_PLAY+100+customs.size()){host.playCustom(customs.get(id-H_PLAY-100).id);return;}
+            if(id>=H_PLAY+100&&id<H_PLAY+100+customs.size()){pendingCustom=customs.get(id-H_PLAY-100).id;pendingCampaign=-1;skillFrom=CUSTOM;show(SKILL);return;}
             if(id>=H_EDIT+100&&id<H_EDIT+100+customs.size()){host.editMap(customs.get(id-H_EDIT-100).id,null);return;}
             if(id>=H_DEL&&id<H_DEL+customs.size()){MapStore.Entry en=customs.get(id-H_DEL);
                 new AlertDialog.Builder(getContext(),android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Delete \""+en.name+"\"?").setMessage("This can't be undone.")
@@ -215,5 +226,5 @@ final class MenuView extends View {
             SectorMap m=i==0?Maps.blank():Maps.campaign(i-1);m.name=i==0?"New level":m.name+" (copy)";host.editMap(null,m);}).setNegativeButton("Cancel",null).show();
     }
     /** Back key. Returns false when the app should close. */
-    boolean back(){if(page==PAUSE){host.resume();return true;}if(page==COMPLETE){host.leaveGame();return true;}if(page!=MAIN){show(MAIN);return true;}return false;}
+    boolean back(){if(page==PAUSE){host.resume();return true;}if(page==COMPLETE){host.leaveGame();return true;}if(page==SKILL){show(skillFrom);return true;}if(page!=MAIN){show(MAIN);return true;}return false;}
 }

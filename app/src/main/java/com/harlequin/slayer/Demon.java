@@ -16,8 +16,24 @@ package com.harlequin.slayer;
  * Pure Java.
  */
 final class Demon {
-    /** Doom zombieman stats: 20 health, pain chance 200/256. */
-    static final float MAX_HEALTH=20,PAIN_CHANCE=200/256f;
+    /**
+     * Doom (2016) possessed soldier: 400 health. Hurt down to a quarter of that he staggers (glowing, open to a glory
+     * kill) for STAGGER_TIME seconds; left alone he shakes it off and comes back with some health.
+     */
+    static final float MAX_HEALTH=400,PAIN_CHANCE=200/256f,STAGGER_HEALTH=.25f*MAX_HEALTH,STAGGER_TIME=3f,RECOVER_HEALTH=.4f*MAX_HEALTH,WARN_TIME=1f;
+    /** Bleeding wounds: {forward, side, height (body frame), seconds left, drip timer} each. */
+    final float[][] wounds=new float[4][];boolean pooled;
+    /** The stagger is on (he can be glory killed), and its glow: 0 none, 1 blue, 2 orange warning flash. */
+    boolean staggered(){return !dead&&ai.state()==STAGGER;}
+    int glow(){if(!staggered())return 0;return ai.stateTime>STAGGER_TIME-WARN_TIME?2:1;}
+    /** Adds a wound at world point (x,y,z): it bleeds for a few seconds. */
+    void wound(float x,float y,float z){
+        float c=(float)Math.cos(rig.bodyYaw),s=(float)Math.sin(rig.bodyYaw),dx=x-body.x,dy=y-body.y;
+        int k=0;for(int i=0;i<wounds.length;i++){if(wounds[i]==null||wounds[i][3]<=0){k=i;break;}if(wounds[i][3]<wounds[k][3])k=i;}
+        wounds[k]=new float[]{dx*c+dy*s,-dx*s+dy*c,z-body.z,5+ai.rng.nextFloat()*3,0};
+    }
+    /** A wound's world position. */
+    float[] woundPos(float[] w){float c=(float)Math.cos(rig.bodyYaw),s=(float)Math.sin(rig.bodyYaw);return new float[]{body.x+w[0]*c-w[1]*s,body.y+w[0]*s+w[1]*c,body.z+w[2]};}
     static final float SCALE=1.08f,EYE=1.68f,RADIUS=.33f;
     static final float SIGHT=34f,FOV=1.2f,ATTACK_RANGE=24f;
     private static final Gun NOGUN=new Gun();
@@ -39,7 +55,7 @@ final class Demon {
 
     void reset(Level L){
         body.x=spawnX;body.y=spawnY;body.z=L.floorUnder(spawnX,spawnY,Player.RADIUS);body.vx=body.vy=body.vz=0;body.yaw=spawnYaw;body.onGround=true;
-        rig.bodyYaw=spawnYaw;health=MAX_HEALTH;dead=false;deathT=0;painCool=0;charge=0;hitFlash=0;
+        rig.bodyYaw=spawnYaw;health=MAX_HEALTH;dead=false;pooled=false;rig.cine=null;for(int i=0;i<wounds.length;i++)wounds[i]=null;deathT=0;painCool=0;charge=0;hitFlash=0;
         ai.alerted=false;ai.canSee=false;ai.sinceSeen=99;ai.cooldown=0;ai.set(this,null);ai.set(this,IDLE);
     }
 
@@ -55,6 +71,7 @@ final class Demon {
         moveX=moveY=0;aiming=false;wantYaw=body.yaw;aimYaw=ai.bearing;
         aimPitch=(float)Math.atan2(p.z+1.1f-(body.z+1.3f*SCALE),Math.max(.5f,ai.dist));
         ai.think(this,dt);
+        rig.cine=staggered()?staggerPose(ai.stateTime,time):null;
         // getting unstuck: if trying to move but going nowhere, sidestep for a moment
         stuckT+=dt;
         if(stuckT>.8f){boolean trying=Math.abs(moveY)>.3f||Math.abs(moveX)>.3f;float moved=(float)Math.hypot(body.x-stuckX,body.y-stuckY);
@@ -96,6 +113,8 @@ final class Demon {
         if(dead)return;health-=amount;hitFlash=1;
         Player p=E.player;ai.hear(p.x,p.y,p.z);
         if(health<=0){fallYaw=(float)Math.atan2(dy,dx);ai.set(this,DEAD);return;}
+        if(ai.state()==STAGGER)return;   // already reeling: no flinch, no recovery
+        if(health<=STAGGER_HEALTH){ai.set(this,STAGGER);return;}
         if(amount>0&&painCool<=0&&ai.rng.nextFloat()<PAIN_CHANCE){tx=dx;ty=dy;ai.set(this,PAIN);}
         else if(ai.state()==IDLE||ai.state()==PATROL)ai.set(this,ALERT);
     }
@@ -168,10 +187,33 @@ final class Demon {
             return ai.canSee&&ai.dist<4?STRAFE:CHASE;}};
     static final Ai.State<Demon> PAIN=new Ai.State<Demon>(){
         public String name(){return "pain";}
-        public void enter(Demon d,Ai<Demon> ai){d.painCool=.25f;float l=(float)Math.hypot(d.tx,d.ty);if(l>1e-3f)d.rig.bump(d.tx/l,d.ty/l,3.5f);d.E.event(Enemies.EV_PAIN,d);}
+        public void enter(Demon d,Ai<Demon> ai){d.painCool=1.1f;float l=(float)Math.hypot(d.tx,d.ty);if(l>1e-3f)d.rig.bump(d.tx/l,d.ty/l,3.5f);d.E.event(Enemies.EV_PAIN,d);}
         public Ai.State<Demon> update(Demon d,Ai<Demon> ai,float dt){
             if(ai.stateTime<.17f)return this;   // a 6-tic flinch
             return ai.canSee&&ai.cooldown<=0&&d.E.canAttack()?ATTACK:CHASE;}};
+    /**
+     * Staggered: hunched over, reeling on the spot (swaying, shuffling his hooves round, his cannon arm hanging and
+     * his free hand clutching his chest), helpless for STAGGER_TIME seconds; then he recovers with RECOVER_HEALTH.
+     */
+    static final Ai.State<Demon> STAGGER=new Ai.State<Demon>(){
+        public String name(){return "stagger";}
+        public void enter(Demon d,Ai<Demon> ai){d.tx=d.body.yaw;d.charge=0;d.E.event(Enemies.EV_STAGGER,d);}
+        public Ai.State<Demon> update(Demon d,Ai<Demon> ai,float dt){
+            float t=ai.stateTime;d.face(d.tx+.4f*(float)Math.sin(t*1.15f)*Hero.smooth(0,.6f,t));   // turning about makes his feet shuffle
+            if(t<STAGGER_TIME)return this;
+            d.health=Math.max(d.health,RECOVER_HEALTH);d.E.event(Enemies.EV_ROAR,d);
+            return ai.canSee&&ai.cooldown<=0&&d.E.canAttack()?ATTACK:CHASE;}};
+    private final Hero.Cine reel=new Hero.Cine();
+    private Hero.Cine staggerPose(float t,float time){
+        Hero.Cine c=reel;float k=Hero.smooth(0,.25f,t)*(1-Hero.smooth(STAGGER_TIME-.3f,STAGGER_TIME,t));
+        float a=time+id*1.7f;
+        c.yaw=body.yaw;
+        c.lean=k*(.3f+.07f*(float)Math.sin(a*2.1f));c.twist=k*.14f*(float)Math.sin(a*1.3f);c.roll=k*.11f*(float)Math.sin(a*1.7f+1);
+        c.crouch=k*(.09f+.035f*(float)Math.sin(a*2.6f));c.headPitch=k*(-.45f+.12f*(float)Math.sin(a*1.9f));c.headYaw=k*.3f*(float)Math.sin(a*.9f);
+        c.rHand=Model.v(.1f+.04f*(float)Math.sin(a*1.4f),-.3f,.88f+.04f*(float)Math.sin(a*2.3f));c.rPole=Model.v(-.4f,-1,-.3f);c.rWorld=false;c.rW=k;
+        c.lHand=Model.v(.24f,.04f,1.14f+.03f*(float)Math.sin(a*3.1f));c.lPole=Model.v(-.3f,1,-.6f);c.lWorld=false;c.lW=k;c.shake=0;
+        return c;
+    }
     static final Ai.State<Demon> DEAD=new Ai.State<Demon>(){
         public String name(){return "dead";}
         public void enter(Demon d,Ai<Demon> ai){d.dead=true;d.deathT=0;d.charge=0;d.E.event(Enemies.EV_DIE,d);}

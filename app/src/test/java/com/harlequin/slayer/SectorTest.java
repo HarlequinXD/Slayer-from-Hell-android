@@ -142,7 +142,7 @@ public class SectorTest {
     @Test public void doomDamageNumbers(){
         Level L=new Level(Maps.campaign(0));Player p=new Player();p.spawn(L);Enemies E=new Enemies(L,p);
         for(int i=0;i<200;i++){int s=E.shotDamage(),pl=E.plasmaDamage(),saw=E.sawDamage();
-            assertTrue(s>=3&&s<=15&&s%3==0);assertTrue(pl>=5&&pl<=40&&pl%5==0);assertTrue(saw>=2&&saw<=20&&saw%2==0);}
-        assertEquals(20,Demon.MAX_HEALTH,0);
+            assertTrue(s>=3&&s<=15&&s%3==0);assertEquals("Doom (2016) pistol",20,pl);assertEquals(20,saw);}
+        assertEquals("Doom (2016) possessed soldier",400,Demon.MAX_HEALTH,0);assertEquals(100,Demon.STAGGER_HEALTH,0);
     }
 }

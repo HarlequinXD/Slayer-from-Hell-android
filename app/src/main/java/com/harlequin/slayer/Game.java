@@ -13,7 +13,7 @@ import javax.microedition.khronos.opengles.GL10;
 /** The game: update loop, the third-person camera, and OpenGL ES 3 rendering of the level, effects, the warden and her shotgun. */
 final class Game implements GLSurfaceView.Renderer {
     private final Context ctx;Hud hud;Sfx sfx;
-    SectorMap map;Level level;final Player pl=new Player();final Gun gun=new Gun();final Fx fx=new Fx();final Hero hero=new Hero();Enemies enemies;private int lastDeaths;
+    SectorMap map;Level level;final Player pl=new Player();final Gun gun=new Gun();final Fx fx=new Fx();final Hero hero=new Hero();final Blood blood=new Blood();Enemies enemies;private int lastDeaths;
     // HUD state (read by the UI thread)
     volatile String loading="Forging materials…";volatile float progress;volatile int ammo,reserve,fps;volatile float health=100,hurt,spread,hint=6;volatile boolean reloading,hasGun=true;volatile int demonsLeft,demonsTotal;
 
@@ -26,12 +26,12 @@ final class Game implements GLSurfaceView.Renderer {
     Game(Context c,SectorMap m){ctx=c;map=m;level=new Level(m);pl.spawn(level);hero.bodyYaw=pl.yaw;enemies=new Enemies(level,pl);demonsTotal=enemies.demons.size();}
 
     // ------------------------------------------------------------------ GL resources
-    private int prog,progDecal,progPart;
+    private int prog,progDecal,progPart,progBlood;
     private final java.util.HashMap<String,Integer> uni=new java.util.HashMap<>();
     private Gfx.Mesh[] levelMesh;private Gfx.Mesh[] parts;private int maskTex;
     private final int[][] tex=new int[Tex.COUNT][];
     static volatile Tex.Mat[] mats;private static final AtomicInteger made=new AtomicInteger();
-    private Gfx.Stream decalStream,partStream;
+    private Gfx.Stream decalStream,partStream,bloodStream;
     /** Render resolution: 270 lines tall (the RPG Pocket Editor's default), width from the screen's shape; the frame is
      *  drawn into an offscreen buffer and scaled up to the screen with point sampling for crisp, chunky pixels. */
     static int RENDER_LINES=270;
@@ -42,15 +42,15 @@ final class Game implements GLSurfaceView.Renderer {
     /** The crosshair is on a demon (the HUD tints it); the letterbox bars of a glory kill (0..1). */
     volatile boolean assistLock;volatile float letterbox;
     private int W=1,H=1,SW=1,SH=1,fbo,fboColor,fboDepth;private long last;private float time,flash;private int frames;private long fpsStart;
-    private float[] decalBuf=new float[Fx.MAXD*6*6],partBuf=new float[Fx.MAXP*6*9];
+    private float[] decalBuf=new float[Fx.MAXD*6*6],partBuf=new float[(Fx.MAXP+Blood.MAXD)*6*9],bloodBuf=new float[Blood.MAXS*6*10];
 
     @Override public void onSurfaceCreated(GL10 unused,EGLConfig cfg){
-        prog=Gfx.program(Shaders.VS_PBR,Shaders.FS_PBR);progDecal=Gfx.program(Shaders.VS_DECAL,Shaders.FS_DECAL);progPart=Gfx.program(Shaders.VS_PART,Shaders.FS_PART);uni.clear();
+        prog=Gfx.program(Shaders.VS_PBR,Shaders.FS_PBR);progDecal=Gfx.program(Shaders.VS_DECAL,Shaders.FS_DECAL);progPart=Gfx.program(Shaders.VS_PART,Shaders.FS_PART);progBlood=Gfx.program(Shaders.VS_BLOOD,Shaders.FS_BLOOD);uni.clear();
         java.util.ArrayList<float[]>[] geo=level.build();levelMesh=new Gfx.Mesh[Tex.COUNT];for(int i=0;i<Tex.COUNT;i++)levelMesh[i]=new Gfx.Mesh(geo[i].get(0));
         float[][] g=Gun.build();parts=new Gfx.Mesh[g.length];for(int i=0;i<g.length;i++)parts[i]=g[i]==null?null:new Gfx.Mesh(g[i]);
         loadBakedGun();loadHero();loadSaw();loadDemon();
         maskTex=Gfx.maskTexture(level.lightMask,level.W,level.H);
-        decalStream=new Gfx.Stream(3,2,1);partStream=new Gfx.Stream(3,2,4);
+        decalStream=new Gfx.Stream(3,2,1);partStream=new Gfx.Stream(3,2,4);bloodStream=new Gfx.Stream(3,2,4,1);
         for(int i=0;i<Tex.COUNT;i++)tex[i]=null;
         if(mats==null){mats=new Tex.Mat[Tex.COUNT];
             ExecutorService ex=Executors.newFixedThreadPool(Math.max(2,Runtime.getRuntime().availableProcessors()-1));
@@ -127,11 +127,23 @@ final class Game implements GLSurfaceView.Renderer {
         for(int k=0;k<3;k++){GLES30.glActiveTexture(GLES30.GL_TEXTURE0+k);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,demonTex[k]);}
         GLES30.glUniform1f(u(prog,"uPom"),demonPom*.35f);GLES30.glUniform1f(u(prog,"uEmit"),5f);
         for(Demon d:enemies.demons){if(d.rig.mat[Hero.P_HEAD]==null||far(d,eye))continue;
+            glow(d);
             for(int p=0;p<demonParts.length&&p<Hero.PARTS;p++){if(demonParts[p]==null||d.rig.mat[p]==null)continue;model(M.mul(d.world,d.rig.mat[p]));demonParts[p].draw();}}
+        GLES30.glUniform4f(u(prog,"uGlow"),0,0,0,0);
         for(int k=0;k<3;k++){GLES30.glActiveTexture(GLES30.GL_TEXTURE0+k);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,cannonTex[k]);}
         GLES30.glUniform1f(u(prog,"uPom"),cannonPom);
         for(Demon d:enemies.demons){if(d.rig.sawMat==null||far(d,eye))continue;
             GLES30.glUniform1f(u(prog,"uEmit"),d.dead?Math.max(0,3-d.deathT*2):3+d.charge*9);model(M.mul(d.world,d.rig.sawMat));cannonMesh.draw();}
+    }
+    /**
+     * Doom (2016)'s stagger highlight: a pulsing blue glow while he can be glory killed, flashing orange in the last
+     * second before he recovers; a brief red flash when hit otherwise.
+     */
+    private void glow(Demon d){
+        int gl=d.glow();float t=time*8+d.id;
+        if(gl==1){float k=.55f+.3f*(float)Math.sin(t);GLES30.glUniform4f(u(prog,"uGlow"),.25f,.55f,1f,k);}
+        else if(gl==2){boolean on=((int)(time*10))%2==0;GLES30.glUniform4f(u(prog,"uGlow"),1f,.42f,.08f,on?1.1f:.25f);}
+        else GLES30.glUniform4f(u(prog,"uGlow"),1f,.25f,.15f,d.dead?0:d.hitFlash*.35f);
     }
     private static boolean far(Demon d,float[] eye){float dx=d.body.x-eye[0],dy=d.body.y-eye[1];return dx*dx+dy*dy>70*70;}
     /** The warden in her animated pose, then the shotgun in her hands and any shells in the chambers or her hand. */
@@ -211,7 +223,7 @@ final class Game implements GLSurfaceView.Renderer {
         if(pl.bumpSpeed>0){sfx.play(Sfx.LAND,Math.min(1,pl.bumpSpeed/5)*.7f,1.2f);hero.bump(pl.bumpNx,pl.bumpNy,pl.bumpSpeed);}
         updateSaw(dt);
         if(hero.steps>0&&pl.onGround)sfx.play(Sfx.STEP,.3f+.15f*hero.run,.9f+fx.rng.nextFloat()*.2f);
-        if(pl.deaths!=lastDeaths){lastDeaths=pl.deaths;enemies.reset();for(Level.Pickup pk:level.pickups)pk.taken=false;cells=Math.max(cells,Math.round(60*Skill.ammo()));banner="YOU DIED";bannerT=2.5f;}   // she died: the level starts over
+        if(pl.deaths!=lastDeaths){lastDeaths=pl.deaths;enemies.reset();for(Level.Pickup pk:level.pickups)pk.taken=false;cells=Math.max(cells,Math.round(START_CELLS*Skill.ammo()));blood.drops.clear();banner="YOU DIED";bannerT=2.5f;}   // she died: the level starts over
         pickups(dt);
         playTime+=dt;bannerT=Math.max(0,bannerT-dt);
         {SectorMap.Sector here=level.sectorAt(pl.x,pl.y);if(!completed&&here!=null&&here.special==SectorMap.SP_EXIT&&pl.onGround){completed=true;if(listener!=null)listener.levelComplete(demonsTotal-enemies.alive(),demonsTotal,playTime);}}
@@ -252,7 +264,8 @@ final class Game implements GLSurfaceView.Renderer {
         // embers rising from the lava
         for(int k=0;k<2;k++){float ex=pl.x+fx.rnd(-12,12),ey=pl.y+fx.rnd(-12,12);Level.Cell c=level.atF(ex,ey);
             if(!c.solid&&c.lava)fx.spawn(Fx.ADD,ex,ey,c.floor+.05f,fx.rnd(-.2f,.2f),fx.rnd(-.2f,.2f),fx.rnd(.6f,1.6f),fx.rnd(1.2f,2.6f),fx.rnd(.012f,.025f),-.2f,.1f,.2f,1f,.4f,.08f,1);}
-        fx.update(dt,level);
+        fx.update(dt,level);bleed(dt);blood.update(dt,level);
+        gloryReady=in.saw?false:Glory.tryStart(pl,enemies,level)!=null;
         if(fx.updateShells(dt,level)>0)sfx.play(Sfx.TINK,.5f,.9f+fx.rng.nextFloat()*.3f);
         flash=Math.max(0,flash-dt);hint=Math.max(0,hint-dt);
         demonsLeft=enemies.alive();
@@ -329,12 +342,16 @@ final class Game implements GLSurfaceView.Renderer {
 
     // ------------------------------------------------------------------ the warden's hand cannon (left forearm)
     /** Energy cells (ammo) and the time until the cannon can fire again. */
-    int cells=Math.round(60*Skill.ammo());private float cannonCool,dryCool;static final int MAX_CELLS=150;
+    int cells=Math.round(START_CELLS*Skill.ammo());private float cannonCool,dryCool;
+    /** A demon now takes 20 shots (400 health, 20 a bolt), so she carries more cells and pickups give more. */
+    static final int MAX_CELLS=250,START_CELLS=120,PICKUP_CELLS=30;
+    /** Seconds between shots: the EMG pistol is a fast semi-automatic. */
+    static final float FIRE_INTERVAL=.2f;
     private void fireCannon(float dt,boolean fire,Demon target){
         cannonCool-=dt;dryCool-=dt;
         if(!fire||cannonCool>0||hero.cannonMat==null)return;
         if(cells<=0){if(dryCool<=0){sfx.play(Sfx.DRY,.8f);dryCool=.4f;}return;}
-        cells--;cannonCool=.3f;
+        cells--;cannonCool=FIRE_INTERVAL;
         float[] mz=M.pt(hero.cannonMat,Demon.MUZZLE_LOCAL);
         // the crosshair picks the target; the bolt leaves the muzzle toward it
         float[] f=camF;float[] wall=level.ray(camPos[0],camPos[1],camPos[2],f[0],f[1],f[2],90);float far=wall!=null?wall[6]:90;
@@ -350,6 +367,19 @@ final class Game implements GLSurfaceView.Renderer {
         for(int k=0;k<4;k++){float sp=fx.rnd(1,4);fx.spawn(Fx.ADD,mz[0],mz[1],mz[2],d[0]*sp+fx.rnd(-.6f,.6f),d[1]*sp+fx.rnd(-.6f,.6f),d[2]*sp+fx.rnd(-.6f,.6f),fx.rnd(.08f,.18f),fx.rnd(.02f,.04f),-.3f,0,3,.5f,1f,.5f,1);}
     }
 
+    // ------------------------------------------------------------------ blood
+    /** A staggered demon is in reach in front of her (the HUD lights the SAW button for a glory kill). */
+    volatile boolean gloryReady;
+    /** Wounds drip while they last; a body that has hit the floor bleeds out into a spreading pool. */
+    private void bleed(float dt){
+        for(Demon d:enemies.demons){
+            if(d.dead){if(!d.pooled&&d.deathT>.8f){d.pooled=true;float c=(float)Math.cos(d.fallYaw),s=(float)Math.sin(d.fallYaw);
+                    float x=d.body.x+c*.9f*Demon.SCALE,y=d.body.y+s*.9f*Demon.SCALE,f=level.floorUnder(x,y,0);if(f<-50||Math.abs(f-d.body.z)>.6f){x=d.body.x;y=d.body.y;f=d.body.z;}
+                    blood.pool(x,y,f,blood.rnd(.55f,.8f));blood.spray(x,y,f+.2f,c,s,1,14,2.5f,1);}
+                continue;}
+            for(float[] w:d.wounds){if(w==null||w[3]<=0)continue;w[3]-=dt;w[4]-=dt;
+                if(w[4]<=0){w[4]=.12f+fx.rng.nextFloat()*.25f+(w[3]<2?.4f:0);float[] p=d.woundPos(w);blood.drip(p[0],p[1],p[2]);}}}
+    }
     // ------------------------------------------------------------------ aim assist
     static float[] chest(Demon d){return new float[]{d.body.x,d.body.y,d.body.z+1.15f*Demon.SCALE};}
     /**
@@ -401,16 +431,19 @@ final class Game implements GLSurfaceView.Renderer {
         float bx=-g.ux,by=-g.uy;
         if((cue&Glory.CUE_GRAB)!=0){sfx.play(Sfx.LAND,.9f,.75f);sfx.play(Sfx.ROAR,.9f,1.15f);}
         if((cue&Glory.CUE_HIT)!=0){sfx.play(Sfx.GRIND,1f,.62f);sfx.play(Sfx.HIT,1f,.7f);sfx.play(Sfx.PAIN,1f,.8f);sfx.play(Sfx.EXPLODE,.4f,1.7f);
-            for(int i=0;i<5;i++)fx.blood(tip[0],tip[1],tip[2],bx+fx.rnd(-.5f,.5f),by+fx.rnd(-.5f,.5f),fx.rnd(.1f,.9f));d.hitFlash=1;}
+            for(int i=0;i<5;i++)fx.blood(tip[0],tip[1],tip[2],bx+fx.rnd(-.5f,.5f),by+fx.rnd(-.5f,.5f),fx.rnd(.1f,.9f));d.hitFlash=1;
+            blood.spray(tip[0],tip[1],tip[2],bx,by,.5f,34,4.5f,.7f);blood.spray(tip[0],tip[1],tip[2],-bx,-by,.3f,14,3,.5f);blood.chunks(tip[0],tip[1],tip[2],bx,by,.3f,4,2.5f);d.wound(tip[0],tip[1],tip[2]);}
         if(g.ripping()){ripClock-=dt;if(ripClock<=0){ripClock=.09f;
             sfx.play(Sfx.GRIND,.85f,.62f+fx.rng.nextFloat()*.12f);if(fx.rng.nextFloat()<.35f)sfx.play(Sfx.HIT,.6f,.65f);
             fx.blood(tip[0],tip[1],tip[2],bx+fx.rnd(-.4f,.4f),by+fx.rnd(-.4f,.4f),fx.rnd(.3f,1.1f));d.hitFlash=.6f;
+            blood.spray(tip[0],tip[1],tip[2],bx+fx.rnd(-.3f,.3f),by+fx.rnd(-.3f,.3f),.9f,9,4.5f,.6f);blood.spray(tip[0],tip[1],tip[2],-bx*.4f,-by*.4f,1,4,3,.5f);
+            if(fx.rng.nextFloat()<.3f)blood.chunks(tip[0],tip[1],tip[2],bx,by,.6f,1,3);
             for(int i=0;i<3;i++)fx.spawn(Fx.ADD,tip[0],tip[1],tip[2],bx*fx.rnd(1,3)+fx.rnd(-1.2f,1.2f),by*fx.rnd(1,3)+fx.rnd(-1.2f,1.2f),fx.rnd(.5f,2.5f),fx.rnd(.12f,.3f),fx.rnd(.008f,.016f),-1,0,2,1f,.55f,.15f,1);}}
-        if((cue&Glory.CUE_OUT)!=0){sfx.play(Sfx.GRIND,.9f,1.15f);sfx.play(Sfx.PAIN,1f,.7f);for(int i=0;i<8;i++)fx.blood(tip[0],tip[1],tip[2],-bx*.3f+fx.rnd(-.6f,.6f),-by*.3f+fx.rnd(-.6f,.6f),fx.rnd(.2f,1.2f));}
+        if((cue&Glory.CUE_OUT)!=0){sfx.play(Sfx.GRIND,.9f,1.15f);sfx.play(Sfx.PAIN,1f,.7f);blood.spray(tip[0],tip[1],tip[2],-bx*.2f,-by*.2f,1,30,4,.9f);blood.chunks(tip[0],tip[1],tip[2],-bx*.3f,-by*.3f,.8f,6,2.5f);for(int i=0;i<8;i++)fx.blood(tip[0],tip[1],tip[2],-bx*.3f+fx.rnd(-.6f,.6f),-by*.3f+fx.rnd(-.6f,.6f),fx.rnd(.2f,1.2f));}
         if((cue&Glory.CUE_SHOVE)!=0)sfx.play(Sfx.LAND,.8f,.7f);
         if((cue&Glory.CUE_DIE)!=0&&!d.dead)d.damage(d.health+1,g.ux,g.uy);   // he topples away from her
         demonEvents();
-        fx.update(dt,level);if(fx.updateShells(dt,level)>0)sfx.play(Sfx.TINK,.5f);
+        fx.update(dt,level);bleed(dt);blood.update(dt,level);gloryReady=false;if(fx.updateShells(dt,level)>0)sfx.play(Sfx.TINK,.5f);
         // the cutscene camera
         camPos=g.camPos.clone();camF=Model.norm(Model.sub(g.camTarget,g.camPos));camR=Model.norm(Model.cross(camF,new float[]{0,0,1}));camU=Model.cross(camR,camF);camFov=g.camFov;
         letterbox=Math.min(1,letterbox+rdt*7);flash=Math.max(0,flash-dt);
@@ -421,7 +454,7 @@ final class Game implements GLSurfaceView.Renderer {
         Glory g=glory;glory=null;hero.cine=null;g.d.rig.cine=null;engineBoost=0;gloryCool=.5f;
         if(!g.d.dead)g.d.damage(g.d.health+1,g.ux,g.uy);
         pl.vx=pl.vy=0;pl.yaw=g.herYaw;camPZ=Float.NaN;camDist=2.7f;   // cut back to her shoulder
-        pl.health=Math.min(100,pl.health+10);int add=Math.round(5*Skill.ammo());cells=Math.min(MAX_CELLS,cells+add);
+        pl.health=Math.min(100,pl.health+10);int add=Math.round(15*Skill.ammo());cells=Math.min(MAX_CELLS,cells+add);
         sfx.play(Sfx.PICKUP,.8f,1.1f);banner="GLORY KILL  +10 HEALTH  +"+add+" CELLS";bannerT=1.8f;
     }
 
@@ -435,7 +468,7 @@ final class Game implements GLSurfaceView.Renderer {
             else fx.cell(p.x,p.y,p.z+bob-.1f,time+p.x);
             float dx=p.x-pl.x,dy=p.y-pl.y;if(editMode||dx*dx+dy*dy>.85f*.85f||Math.abs(p.z-pl.z)>1.2f)continue;
             if(p.type==SectorMap.T_HEALTH){if(pl.health>=100)continue;pl.health=Math.min(100,pl.health+25);sfx.play(Sfx.PICKUP,.9f,1.2f);banner="+25 HEALTH";}
-            else{if(cells>=MAX_CELLS)continue;int add=Math.round(15*Skill.ammo());cells=Math.min(MAX_CELLS,cells+add);sfx.play(Sfx.PICKUP,.8f,.85f);sfx.play(Sfx.CHARGE,.4f,1.6f);banner="+"+add+" CELLS";}
+            else{if(cells>=MAX_CELLS)continue;int add=Math.round(PICKUP_CELLS*Skill.ammo());cells=Math.min(MAX_CELLS,cells+add);sfx.play(Sfx.PICKUP,.8f,.85f);sfx.play(Sfx.CHARGE,.4f,1.6f);banner="+"+add+" CELLS";}
             bannerT=1.4f;p.taken=true;}
     }
 
@@ -450,11 +483,14 @@ final class Game implements GLSurfaceView.Renderer {
                 case Enemies.EV_SHOOT:sfx.play(Sfx.FIREBALL,.9f*v);fx.spawn(Fx.STAR,e.x,e.y,e.z,e.dx,e.dy,e.dz,.08f,.32f,2,0,0,.4f,.7f,1f,1);flashes.add(new float[]{e.x,e.y,e.z,.08f});break;
                 case Enemies.EV_EXPLODE:sfx.play(Sfx.EXPLODE,.9f*v);fx.explosion(e.x,e.y,e.z,e.dx,e.dy,e.dz);flashes.add(new float[]{e.x,e.y,e.z,.3f});break;
                 case Enemies.EV_HIT_PLAYER:sfx.play(Sfx.EXPLODE,.9f,1.2f);sfx.play(Sfx.SIZZLE,.6f);fx.explosion(e.x,e.y,e.z,e.dx,e.dy,e.dz);flashes.add(new float[]{e.x,e.y,e.z,.25f});pl.kickVel-=2.5f;break;
-                case Enemies.EV_BOLT_HIT:sfx.play(Sfx.HIT,.9f,.9f+fx.rng.nextFloat()*.2f);sfx.play(Sfx.EXPLODE,.35f,1.7f);fx.plasmaBurst(e.x,e.y,e.z,-e.dx,-e.dy,-e.dz);fx.blood(e.x,e.y,e.z,e.dx,e.dy,e.dz);flashes.add(new float[]{e.x,e.y,e.z,.15f,1});break;
+                case Enemies.EV_BOLT_HIT:sfx.play(Sfx.HIT,.9f,.9f+fx.rng.nextFloat()*.2f);sfx.play(Sfx.EXPLODE,.35f,1.7f);fx.plasmaBurst(e.x,e.y,e.z,-e.dx,-e.dy,-e.dz);fx.blood(e.x,e.y,e.z,e.dx,e.dy,e.dz);flashes.add(new float[]{e.x,e.y,e.z,.15f,1});
+                    blood.spray(e.x,e.y,e.z,e.dx,e.dy,e.dz+.2f,12,4.2f,.45f);blood.spray(e.x,e.y,e.z,-e.dx,-e.dy,.4f,5,2.2f,.7f);   // out the back, and back at her
+                    if(e.demon>=0)enemies.demons.get(e.demon).wound(e.x,e.y,e.z);break;
                 case Enemies.EV_BOLT_BURST:sfx.play(Sfx.EXPLODE,.45f*v,1.5f);fx.plasmaBurst(e.x,e.y,e.z,e.dx,e.dy,e.dz);flashes.add(new float[]{e.x,e.y,e.z,.15f,1});
                     {float[] hit=level.ray(e.x,e.y,e.z,-e.dx,-e.dy,-e.dz,.5f);if(hit!=null&&(int)hit[7]!=Tex.LAVA&&(int)hit[7]!=Tex.LIGHT)fx.hole(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5]);}break;
                 case Enemies.EV_PAIN:sfx.play(Sfx.PAIN,.9f*v,.85f+fx.rng.nextFloat()*.3f);break;
-                case Enemies.EV_DIE:sfx.play(Sfx.DIE,v);break;
+                case Enemies.EV_DIE:sfx.play(Sfx.DIE,v);{Demon d=enemies.demons.get(e.demon);float fy=d.fallYaw;blood.spray(e.x,e.y,e.z-.5f,(float)Math.cos(fy),(float)Math.sin(fy),.6f,22,4,.8f);}break;
+                case Enemies.EV_STAGGER:sfx.play(Sfx.PAIN,v,.7f);sfx.play(Sfx.ROAR,.5f*v,.6f);{Demon d=enemies.demons.get(e.demon);float[] c=chest(d);blood.spray(c[0],c[1],c[2],0,0,1,10,2.5f,1);}break;
                 case Enemies.EV_STEP:if(v>.2f)sfx.play(Sfx.STEP,.35f*v,.7f+fx.rng.nextFloat()*.15f);break;
             }}
         enemies.events.clear();
@@ -485,7 +521,7 @@ final class Game implements GLSurfaceView.Renderer {
         // the bar's leading edge biting into walls: sparks, scars and a grind
         if(hero.saw>.6f){float[] sa=M.pt(hero.sawMat,new float[]{.47f,0,0}),sb=M.pt(hero.sawMat,new float[]{.97f,0,0});
             float[] flesh=glory!=null?null:enemies.saw(sa,sb,dt);
-            if(flesh!=null){fx.blood(flesh[0],flesh[1],flesh[2],sb[0]-sa[0],sb[1]-sa[1],sb[2]-sa[2]);if(time-lastGrind>.14f){lastGrind=time;sfx.play(Sfx.GRIND,.8f,.7f+fx.rng.nextFloat()*.1f);sfx.play(Sfx.HIT,.5f,.7f);}pl.kickVel+=dt*2;}}
+            if(flesh!=null){fx.blood(flesh[0],flesh[1],flesh[2],sb[0]-sa[0],sb[1]-sa[1],sb[2]-sa[2]);if(time-lastGrind>.14f){lastGrind=time;blood.spray(flesh[0],flesh[1],flesh[2],sa[0]-sb[0],sa[1]-sb[1],.8f,8,3.5f,.8f);sfx.play(Sfx.GRIND,.8f,.7f+fx.rng.nextFloat()*.1f);sfx.play(Sfx.HIT,.5f,.7f);}pl.kickVel+=dt*2;}}
         if(hero.saw>.6f){float[] a=M.pt(hero.sawMat,new float[]{.47f,0,0}),b=M.pt(hero.sawMat,new float[]{.97f,0,0});float[] d=Model.sub(b,a);float l=Model.len(d);d=Model.mul(d,1/l);
             float[] hit=level.ray(a[0],a[1],a[2],d[0],d[1],d[2],l);
             if(hit!=null){cutTimer-=dt;if(cutTimer<=0){cutTimer=.06f;fx.impact(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5],(int)hit[7]);if(fx.rng.nextFloat()<.3f)fx.hole(hit[0],hit[1],hit[2],hit[3],hit[4],hit[5]);}
@@ -542,6 +578,7 @@ final class Game implements GLSurfaceView.Renderer {
         GLES30.glUniform3f(u(prog,"uCam"),eye[0],eye[1],eye[2]);GLES30.glUniform2i(u(prog,"uGrid"),level.W,level.H);GLES30.glUniform2f(u(prog,"uGridO"),level.ox,level.oy);GLES30.glUniform1f(u(prog,"uGridS"),Level.CELL);
         GLES30.glUniform3f(u(prog,"uSky"),.035f,.03f,.03f);GLES30.glUniform3f(u(prog,"uGround"),.03f,.012f,.008f);
         GLES30.glUniform4f(u(prog,"uFog"),.035f,.012f,.008f,.022f);GLES30.glUniform1f(u(prog,"uTime"),time);GLES30.glUniform1f(u(prog,"uExposure"),1.15f);GLES30.glUniform1f(u(prog,"uEnvK"),1f);GLES30.glUniform1f(u(prog,"uShadowK"),7f);
+        GLES30.glUniform4f(u(prog,"uGlow"),0,0,0,0);
         GLES30.glUniform1i(u(prog,"uA"),0);GLES30.glUniform1i(u(prog,"uB"),1);GLES30.glUniform1i(u(prog,"uC"),2);GLES30.glUniform1i(u(prog,"uMask"),3);
         GLES30.glActiveTexture(GLES30.GL_TEXTURE3);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,maskTex);
         GLES30.glUniformMatrix4fv(u(prog,"uVP"),1,false,vp,0);
@@ -554,7 +591,7 @@ final class Game implements GLSurfaceView.Renderer {
         // spent shells lying around
         for(Fx.Shell s:fx.shells){float[] Mx=M.mul(M.tr(s.x,s.y,s.z),M.mul(M.rz(s.yaw),M.mul(M.ry(s.pitch),M.rx(s.roll))));model(Mx);
             bindMat(Tex.SHELL,false);parts[Gun.P_HULL].draw();bindMat(Tex.BRASS,false);parts[Gun.P_BASE].draw();}
-        drawDecals(vp,eye);
+        drawDecals(vp,eye);drawBlood(vp,eye);
         drawParticles(vp,right,upR);
         GLES30.glBindVertexArray(0);
     }
@@ -577,6 +614,23 @@ final class Game implements GLSurfaceView.Renderer {
         decalStream.draw(b,n);
         GLES30.glDisable(GLES30.GL_POLYGON_OFFSET_FILL);GLES30.glDepthMask(true);GLES30.glDisable(GLES30.GL_BLEND);
     }
+    /** Blood stains: one quad each in its surface's frame (walls: x along, y up; floors: x east, y north). */
+    private void drawBlood(float[] vp,float[] eye){
+        int n=0;float[] b=bloodBuf;
+        for(int i=0;i<blood.count;i++){Blood.Splat s=blood.splats[i];
+            float dx=s.x-eye[0],dy=s.y-eye[1];if(dx*dx+dy*dy>60*60)continue;
+            float[] T,B;if(s.type==Blood.WALL){T=new float[]{-s.ny,s.nx,0};B=new float[]{0,0,1};}else if(s.nz<0){T=new float[]{1,0,0};B=new float[]{0,-1,0};}else{T=new float[]{1,0,0};B=new float[]{0,1,0};}
+            float e=Math.max(1.9f,s.stretch*1.25f+1f),lo=s.type==Blood.WALL?Math.max(e,.8f+s.drip):e;
+            float[][] q={{-e,-lo},{e,-lo},{e,e},{-e,-lo},{e,e},{-e,e}};float ty=s.type*16+Math.min(15,s.drip);
+            for(float[] k:q){b[n++]=s.x+(T[0]*k[0]+B[0]*k[1])*s.r;b[n++]=s.y+(T[1]*k[0]+B[1]*k[1])*s.r;b[n++]=s.z+(T[2]*k[0]+B[2]*k[1])*s.r;
+                b[n++]=k[0];b[n++]=k[1];b[n++]=s.seed;b[n++]=ty;b[n++]=s.age;b[n++]=s.stretch;b[n++]=s.ang;}}
+        if(n==0)return;
+        GLES30.glUseProgram(progBlood);GLES30.glUniformMatrix4fv(u(progBlood,"uVP"),1,false,vp,0);GLES30.glUniform3f(u(progBlood,"uCam"),eye[0],eye[1],eye[2]);GLES30.glUniform4f(u(progBlood,"uFog"),0,0,0,.022f);
+        GLES30.glEnable(GLES30.GL_BLEND);GLES30.glBlendFunc(GLES30.GL_DST_COLOR,GLES30.GL_ZERO);GLES30.glDepthMask(false);
+        GLES30.glEnable(GLES30.GL_POLYGON_OFFSET_FILL);GLES30.glPolygonOffset(-1,-3);
+        bloodStream.draw(b,n);
+        GLES30.glDisable(GLES30.GL_POLYGON_OFFSET_FILL);GLES30.glDepthMask(true);GLES30.glDisable(GLES30.GL_BLEND);
+    }
     private void drawParticles(float[] vp,float[] right,float[] up){
         GLES30.glUseProgram(progPart);GLES30.glUniformMatrix4fv(u(progPart,"uVP"),1,false,vp,0);
         GLES30.glEnable(GLES30.GL_BLEND);GLES30.glDepthMask(false);
@@ -589,6 +643,13 @@ final class Game implements GLSurfaceView.Renderer {
                 float[][] q={{-1,-1},{1,-1},{1,1},{-1,-1},{1,1},{-1,1}};
                 for(float[] k:q){b[n++]=fx.px[i]+(rx[0]*k[0]+ry[0]*k[1])*s;b[n++]=fx.py[i]+(rx[1]*k[0]+ry[1]*k[1])*s;b[n++]=fx.pz[i]+(rx[2]*k[0]+ry[2]*k[1])*s;
                     b[n++]=k[0]*.5f+.5f+uo;b[n++]=k[1]*.5f+.5f;b[n++]=fx.r[i];b[n++]=fx.g[i];b[n++]=fx.b[i];b[n++]=al;}}
+            if(pass==0){float[] eye=camPos;   // blood droplets: dark streaks stretched along their motion
+                for(Blood.Drop d:blood.drops){float sp=(float)Math.sqrt(d.vx*d.vx+d.vy*d.vy+d.vz*d.vz);float[] ax=sp>1e-3f?new float[]{d.vx/sp,d.vy/sp,d.vz/sp}:new float[]{0,0,1};
+                    float[] vw={d.x-eye[0],d.y-eye[1],d.z-eye[2]};float[] side=Model.cross(ax,vw);float sl=Model.len(side);if(sl<1e-5f)continue;side=Model.mul(side,d.size/sl);
+                    float len=d.size+sp*.018f;float[] A=Model.mul(ax,len);float c=d.chunk?.16f:.32f;
+                    float[][] q={{-1,-1},{1,-1},{1,1},{-1,-1},{1,1},{-1,1}};
+                    for(float[] k:q){b[n++]=d.x+A[0]*k[1]+side[0]*k[0];b[n++]=d.y+A[1]*k[1]+side[1]*k[0];b[n++]=d.z+A[2]*k[1]+side[2]*k[0];
+                        b[n++]=k[0]*.5f+.5f;b[n++]=k[1]*.5f+.5f;b[n++]=c;b[n++]=.015f;b[n++]=.012f;b[n++]=1;}}}
             if(n==0)continue;
             if(pass==0)GLES30.glBlendFunc(GLES30.GL_ONE,GLES30.GL_ONE_MINUS_SRC_ALPHA);else GLES30.glBlendFunc(GLES30.GL_ONE,GLES30.GL_ONE);
             partStream.draw(b,n);}

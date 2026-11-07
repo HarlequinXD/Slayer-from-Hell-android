@@ -30,7 +30,7 @@ final class Game implements GLSurfaceView.Renderer {
     private final java.util.HashMap<String,Integer> uni=new java.util.HashMap<>();
     private Gfx.Mesh[] levelMesh;private Gfx.Mesh[] parts;private int maskTex;
     private final int[][] tex=new int[Tex.COUNT][];
-    static volatile Tex.Mat[] mats;private static final AtomicInteger made=new AtomicInteger();
+
     private Gfx.Stream decalStream,partStream,bloodStream;
     /** Render resolution: 270 lines tall (the RPG Pocket Editor's default), width from the screen's shape; the frame is
      *  drawn into an offscreen buffer and scaled up to the screen with point sampling for crisp, chunky pixels. */
@@ -47,14 +47,12 @@ final class Game implements GLSurfaceView.Renderer {
     @Override public void onSurfaceCreated(GL10 unused,EGLConfig cfg){
         prog=Gfx.program(Shaders.VS_PBR,Shaders.FS_PBR);progDecal=Gfx.program(Shaders.VS_DECAL,Shaders.FS_DECAL);progPart=Gfx.program(Shaders.VS_PART,Shaders.FS_PART);progBlood=Gfx.program(Shaders.VS_BLOOD,Shaders.FS_BLOOD);uni.clear();
         java.util.ArrayList<float[]>[] geo=level.build();levelMesh=new Gfx.Mesh[Tex.COUNT];for(int i=0;i<Tex.COUNT;i++)levelMesh[i]=new Gfx.Mesh(geo[i].get(0));
+        needMaterials(geo,true);
         float[][] g=Gun.build();parts=new Gfx.Mesh[g.length];for(int i=0;i<g.length;i++)parts[i]=g[i]==null?null:new Gfx.Mesh(g[i]);
         loadBakedGun();loadHero();loadSaw();loadDemon();
         maskTex=Gfx.maskTexture(level.lightMask,level.W,level.H);
         decalStream=new Gfx.Stream(3,2,1);partStream=new Gfx.Stream(3,2,4);bloodStream=new Gfx.Stream(3,2,4,1);
-        for(int i=0;i<Tex.COUNT;i++)tex[i]=null;
-        if(mats==null){mats=new Tex.Mat[Tex.COUNT];
-            ExecutorService ex=Executors.newFixedThreadPool(Math.max(2,Runtime.getRuntime().availableProcessors()-1));
-            for(int i=0;i<Tex.COUNT;i++){final int id=i;ex.submit(()->{mats[id]=Tex.make(id);made.incrementAndGet();});}ex.shutdown();}
+        for(int i=0;i<Tex.COUNT;i++)tex[i]=null;firstReady=false;
         GLES30.glEnable(GLES30.GL_DEPTH_TEST);GLES30.glDepthFunc(GLES30.GL_LEQUAL);GLES30.glDisable(GLES30.GL_CULL_FACE);
         last=System.nanoTime();
     }
@@ -190,14 +188,28 @@ final class Game implements GLSurfaceView.Renderer {
         GLES30.glBlitFramebuffer(0,0,W,H,0,0,SW,SH,GLES30.GL_COLOR_BUFFER_BIT,GLES30.GL_NEAREST);
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER,0);
     }
-    /** Uploads finished materials (two per frame) and reports progress; true when everything is on the GPU. */
+    // ------------------------------------------------------------------ materials (only the ones this level uses)
+    private final boolean[] need=new boolean[Tex.COUNT];private final float[] matPom=new float[Tex.COUNT],matEmit=new float[Tex.COUNT];private boolean firstReady;
+    /** Which materials the level's geometry (and the shell casings) use: those are generated, the rest freed. */
+    private void needMaterials(java.util.ArrayList<float[]>[] geo,boolean trim){
+        for(int i=0;i<Tex.COUNT;i++)need[i]=geo[i].get(0).length>0;
+        need[Tex.SHELL]=need[Tex.BRASS]=true;
+        if(trim)Materials.keepOnly(need);
+        for(int i=0;i<Tex.COUNT;i++)if(need[i])Materials.request(i);
+    }
+    /**
+     * Uploads finished materials (two per frame). Until all of this level's are on the GPU the loading screen shows;
+     * afterwards ones the 3D editor starts using pop in as they finish.
+     */
     private boolean texturesReady(){
-        int up=0,done=0;
-        for(int i=0;i<Tex.COUNT;i++){if(tex[i]!=null){done++;continue;}Tex.Mat m=mats[i];if(m==null||up>=2)continue;
-            tex[i]=new int[]{Gfx.texture(m.albedoAO,m.size,m.size,true,true),Gfx.texture(m.normalHeight,m.size,m.size,false,true),Gfx.texture(m.rme,m.size,m.size,false,true)};up++;done++;}
-        progress=(made.get()+done)/(2f*Tex.COUNT);
-        if(done<Tex.COUNT){loading="Forging materials "+made.get()+"/"+Tex.COUNT+" · uploading "+done+"/"+Tex.COUNT;return false;}
-        return true;
+        int up=0,done=0,total=0;
+        for(int i=0;i<Tex.COUNT;i++){if(!need[i])continue;total++;if(tex[i]!=null){done++;continue;}Tex.Mat m=Materials.get(i);if(m==null){Materials.request(i);continue;}if(up>=2)continue;
+            tex[i]=new int[]{Gfx.texture(m.albedoAO,m.size,m.size,true,true),Gfx.texture(m.normalHeight,m.size,m.size,false,true),Gfx.texture(m.rme,m.size,m.size,false,true)};
+            matPom[i]=m.pom;matEmit[i]=m.emit;up++;done++;}
+        if(firstReady)return true;
+        progress=done/(float)Math.max(1,total);
+        if(done<total){loading="Forging materials "+done+"/"+total;return false;}
+        firstReady=true;return true;
     }
 
     // ------------------------------------------------------------------ update
@@ -295,6 +307,7 @@ final class Game implements GLSurfaceView.Renderer {
     private void rebuild(SectorMap m){
         map=m;level=new Level(m);
         java.util.ArrayList<float[]>[] geo=level.build();for(int i=0;i<Tex.COUNT;i++){if(levelMesh[i]!=null)levelMesh[i].release();levelMesh[i]=new Gfx.Mesh(geo[i].get(0));}
+        needMaterials(geo,false);
         GLES30.glDeleteTextures(1,new int[]{maskTex},0);maskTex=Gfx.maskTexture(level.lightMask,level.W,level.H);
         enemies=new Enemies(level,pl);
     }
@@ -583,8 +596,8 @@ final class Game implements GLSurfaceView.Renderer {
         GLES30.glActiveTexture(GLES30.GL_TEXTURE3);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,maskTex);
         GLES30.glUniformMatrix4fv(u(prog,"uVP"),1,false,vp,0);
         float[] I=M.id();model(I);
-        for(int m=0;m<Tex.COUNT;m++){if(levelMesh[m].count==0)continue;bindMat(m,true);
-            GLES30.glUniform2f(u(prog,"uUvScroll"),m==Tex.LAVA?time*.012f:0,m==Tex.LAVA?time*.007f:0);GLES30.glUniform1f(u(prog,"uPulse"),m==Tex.LAVA?1:0);
+        for(int m=0;m<Tex.COUNT;m++){if(levelMesh[m].count==0||tex[m]==null)continue;bindMat(m,true);boolean flow=Tex.flows(m);
+            GLES30.glUniform2f(u(prog,"uUvScroll"),flow?time*.012f:0,flow?time*.007f:0);GLES30.glUniform1f(u(prog,"uPulse"),flow?1:0);
             levelMesh[m].draw();}
         GLES30.glUniform2f(u(prog,"uUvScroll"),0,0);GLES30.glUniform1f(u(prog,"uPulse"),0);
         GLES30.glUniform1f(u(prog,"uEnvK"),5f);if(!editMode)drawPlayer();drawDemons(eye);GLES30.glUniform1f(u(prog,"uEnvK"),1f);
@@ -598,7 +611,7 @@ final class Game implements GLSurfaceView.Renderer {
     private void model(float[] m){GLES30.glUniformMatrix4fv(u(prog,"uModel"),1,false,m,0);GLES30.glUniformMatrix3fv(u(prog,"uNrmM"),1,false,M.nrm(m),0);}
     private void bindMat(int m,boolean pom){
         int[] t=tex[m];for(int k=0;k<3;k++){GLES30.glActiveTexture(GLES30.GL_TEXTURE0+k);GLES30.glBindTexture(GLES30.GL_TEXTURE_2D,t[k]);}
-        Tex.Mat mt=mats[m];GLES30.glUniform1f(u(prog,"uPom"),pom?mt.pom:0);GLES30.glUniform1f(u(prog,"uEmit"),mt.emit);
+        GLES30.glUniform1f(u(prog,"uPom"),pom?matPom[m]:0);GLES30.glUniform1f(u(prog,"uEmit"),matEmit[m]);
     }
     private void drawDecals(float[] vp,float[] eye){
         int n=0;float[] b=decalBuf;

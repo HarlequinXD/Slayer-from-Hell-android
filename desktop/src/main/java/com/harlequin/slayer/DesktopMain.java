@@ -258,7 +258,9 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
             showMenu(MenuView.SETTINGS);for(int i=0;i<10;i++)frame(1/60f);shot(dir+"/2-settings.png");
             editMap(null,Maps.campaign(0));dev.mouseMove(fbW*.45f,fbH*.5f);for(int i=0;i<10;i++)frame(1/60f);shot(dir+"/3-editor.png");
             layer.prompt("Level name","Hell's Gate",s->{});for(int i=0;i<10;i++)frame(1/60f);shot(dir+"/4-dialog.png");layer.dismiss();
-            open3D();for(int i=0;i<240;i++)frame(1/60f);shot(dir+"/5-editor-3d.png");
+            open3D();for(int i=0;i<240;i++)frame(1/60f);shot(dir+"/5-editor-3d.png");back3D();
+            {SectorMap m=editor.map();for(int k=0;k<m.sectors.size();k++){SectorMap.Sector sc=m.sectors.get(k);sc.wallTex=Tex.FIRST_LIB+(k*7)%50;sc.floorTex=Tex.FIRST_LIB+50+(k*11)%50;sc.ceilTex=Tex.FIRST_LIB+(k*13+3)%50;}}
+            open3D();for(int i=0;i<400;i++)frame(1/60f);shot(dir+"/5b-new-textures-3d.png");
             playCampaign(0);dev.key(Devices.K_W,true);for(int i=0;i<600;i++){frame(1/60f);if(game!=null&&game.loading==null&&i>200)break;}
             for(int i=0;i<90;i++)frame(1/60f);dev.key(Devices.K_W,false);shot(dir+"/6-game.png");
             pauseGame();for(int i=0;i<10;i++)frame(1/60f);shot(dir+"/7-paused.png");

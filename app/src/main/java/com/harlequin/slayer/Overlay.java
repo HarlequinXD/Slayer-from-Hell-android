@@ -19,7 +19,8 @@ final class Overlay extends View implements Pointer.Aware {
     static Overlay get(){return current;}
 
     final Ui ui;final Pointer pointer;
-    private static final int NONE=0,CHOOSE=1,CONFIRM=2,PROMPT=3;
+    private static final int NONE=0,CHOOSE=1,CONFIRM=2,PROMPT=3,TEXTURE=4;
+    private final TexBrowser browser=new TexBrowser();private static final int H_TEX=3000,H_TTAB=2900;private float cols=4,cell=1,gridH=1;private boolean revealPending;
     private int kind;private String title,message,okLabel;private String[] items;private int selected;
     private Pick onPick;private Runnable onOk;private Text onText;private final StringBuilder text=new StringBuilder();private boolean shift;
     private String toast;private long toastUntil;private float scroll;private boolean danger;
@@ -34,12 +35,15 @@ final class Overlay extends View implements Pointer.Aware {
     void choose(String title,String[] items,int selected,Pick cb){this.title=title;this.items=items;this.selected=selected;onPick=cb;kind=CHOOSE;scroll=0;focus();}
     void confirm(String title,String message,String ok,boolean danger,Runnable cb){this.title=title;this.message=message;okLabel=ok;this.danger=danger;onOk=cb;kind=CONFIRM;focus();}
     void prompt(String title,String value,Text cb){this.title=title;text.setLength(0);text.append(value==null?"":value);onText=cb;kind=PROMPT;shift=false;focus();}
+    /** The texture picker: tabs and a grid of every map texture; `current` is a map texture index (into SectorMap.MAP_TEXTURES). */
+    void pickTexture(String title,int current,Pick cb){this.title=title;selected=current;onPick=cb;kind=TEXTURE;revealPending=true;
+        if(current>=0&&browser.filter!=0&&java.util.Arrays.binarySearch(browser.list(),current)<0)browser.filter=0;focus();}
     void toast(String msg){toast=msg;toastUntil=System.currentTimeMillis()+2600;invalidate();}
     void dismiss(){kind=NONE;onPick=null;onOk=null;onText=null;invalidate();}
     /** Esc / B: closes the dialog; false when there was none. */
     boolean back(){if(kind==NONE)return false;dismiss();return true;}
     private void focus(){invalidate();post(()->{if(Float.isNaN(pointer.x))return;RectF t=firstTarget();if(t!=null&&pointer.visible)pointer.jumpTo(t.centerX(),t.centerY());});}
-    private RectF firstTarget(){for(Ui.Hit h:ui.hits)if(h.id>=H_ITEM&&h.id<H_ITEM+999||h.id==H_OK)return h.r;return null;}
+    private RectF firstTarget(){for(Ui.Hit h:ui.hits)if(kind==TEXTURE?h.id==H_TEX+selected:(h.id>=H_ITEM&&h.id<H_ITEM+999||h.id==H_OK))return h.r;return null;}
     /** Keyboard: typed characters, Backspace, Enter. */
     void typed(String s){if(kind!=PROMPT||s.isEmpty())return;for(char ch:s.toCharArray())if(ch>=32&&text.length()<40)text.append(ch);invalidate();}
     void backspace(){if(kind==PROMPT&&text.length()>0){text.setLength(text.length()-1);invalidate();}}
@@ -60,6 +64,7 @@ final class Overlay extends View implements Pointer.Aware {
         float dp=ui.dp;ui.rect(c,0,0,w,h,0xb0080302);
         float pw=Math.min(w-dp*40,kind==PROMPT?dp*620:dp*440),ph;
         int rows=kind==CHOOSE?Math.min(items.length,7):0;
+        if(kind==TEXTURE){drawTextures(c,w,h);return;}
         ph=kind==CHOOSE?dp*(70+rows*46+56):kind==CONFIRM?dp*176:Math.min(h-dp*24,dp*(118+4*46+58));
         float l=(w-pw)/2,t=(h-ph)/2,rr=l+pw,b=t+ph;
         ui.round(c,l,t+dp*4,rr,b+dp*6,dp*12,0x80000000);
@@ -95,21 +100,37 @@ final class Overlay extends View implements Pointer.Aware {
         }
     }
 
+    private void drawTextures(Canvas c,float w,float h){
+        float dp=ui.dp;float pw=Math.min(w-dp*32,dp*820),ph=h-dp*28,l=(w-pw)/2,t=(h-ph)/2,rr=l+pw,b=t+ph;
+        ui.round(c,l,t+dp*4,rr,b+dp*6,dp*12,0x80000000);ui.hellPanel(c,l,t,rr,b);ui.outline(c,l,t,rr,b,0,0x60ff5a1a,dp);ui.area(l,t,rr,b,H_PANEL);
+        ui.glowText(c,title,l+dp*18,t+dp*34,18,0xffff8a50,-1);
+        float tabsL=rr-dp*16-Math.min(dp*360,pw*.5f);browser.drawTabs(c,ui,tabsL,t+dp*14,rr-dp*16,1,H_TTAB);
+        float gt=t+dp*52,gb=b-dp*54;int n=Math.max(3,(int)((pw-dp*32)/(dp*86)));cols=n;cell=((pw-dp*36)-dp*6*(n-1))/n+dp*6;gridH=gb-gt;
+        if(revealPending){browser.reveal(selected,n,cell,gridH);revealPending=false;}
+        browser.drawGrid(c,ui,l+dp*16,gt,rr-dp*20,gb,n,selected,H_TEX);if(browser.waiting)postInvalidateDelayed(120);
+        int hov=Float.isNaN(Ui.hoverX)?-1:TexBrowser.at(ui,Ui.hoverX,Ui.hoverY,H_TEX);int show=hov>=0?hov:selected;
+        if(show>=0){int tex=SectorMap.MAP_TEXTURES[show];ui.textMid(c,Tex.NAMES[tex],l+dp*18,b-dp*30,15,Ui.TEXT,2,-1);
+            ui.textMid(c,Tex.CATEGORY_NAMES[Math.min(2,Tex.category(tex))]+(Tex.emissive(tex)?" · glows":"")+(show==selected?" · current":""),l+dp*18+ui.measure(Tex.NAMES[tex],15,2)+dp*12,b-dp*30,12,Ui.TEXT_3,1,-1);}
+        r.set(rr-dp*130,b-dp*48,rr-dp*16,b-dp*12);ui.button(c,r,-1,"Cancel",Ui.GHOST);ui.hit(r,H_CANCEL);
+    }
+
     // ---------------------------------------------------------------- touch (fingers, and the cursor's clicks)
     @Override public boolean onTouchEvent(MotionEvent e){
         if(kind==NONE)return false;
         int a=e.getActionMasked();float x=e.getX(),y=e.getY();
         if(a==MotionEvent.ACTION_DOWN){downX=x;downY=y;downHit=ui.hitAt(x,y);scrolling=false;return true;}
-        if(a==MotionEvent.ACTION_MOVE){if(kind==CHOOSE&&Math.abs(y-downY)>ui.dp*8){scrolling=true;scroll-=y-downY;downY=y;invalidate();}return true;}
+        if(a==MotionEvent.ACTION_MOVE){if((kind==CHOOSE||kind==TEXTURE)&&(scrolling||Math.abs(y-downY)>ui.dp*8)){scrolling=true;if(kind==TEXTURE)browser.scroll-=y-downY;else scroll-=y-downY;downY=y;invalidate();}return true;}
         if(a==MotionEvent.ACTION_UP){if(!scrolling){int id=ui.hitAt(x,y);if(id==downHit)tap(id);}return true;}
         return true;
     }
-    @Override public void pointerPan(float dx,float dy){if(kind==CHOOSE){scroll+=dy;invalidate();}}
-    @Override public void pointerZoom(float steps,float x,float y){if(kind==CHOOSE){scroll-=steps*ui.dp*46;invalidate();}}
+    @Override public void pointerPan(float dx,float dy){if(kind==CHOOSE){scroll+=dy;invalidate();}else if(kind==TEXTURE){browser.scroll+=dy;invalidate();}}
+    @Override public void pointerZoom(float steps,float x,float y){if(kind==CHOOSE){scroll-=steps*ui.dp*46;invalidate();}else if(kind==TEXTURE){browser.scroll-=steps*cell;invalidate();}}
     private void tap(int id){
         if(id<0){dismiss();return;}   // outside the panel
         if(id==H_PANEL)return;
         if(id==H_CANCEL){dismiss();return;}
+        if(kind==TEXTURE&&id>=H_TTAB&&id<H_TTAB+TexBrowser.TABS.length){browser.filter=id-H_TTAB;browser.scroll=0;invalidate();return;}
+        if(kind==TEXTURE&&id>=H_TEX&&id<H_TEX+SectorMap.MAP_TEXTURES.length){Pick cb=onPick;dismiss();if(cb!=null)cb.pick(id-H_TEX);return;}
         if(kind==CHOOSE&&id>=H_ITEM&&id<H_ITEM+items.length){Pick cb=onPick;dismiss();if(cb!=null)cb.pick(id-H_ITEM);return;}
         if(kind==CONFIRM&&id==H_OK){Runnable ok=onOk;dismiss();if(ok!=null)ok.run();return;}
         if(kind==PROMPT){

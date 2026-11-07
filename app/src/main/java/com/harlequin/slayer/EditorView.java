@@ -468,8 +468,8 @@ final class EditorView extends View implements Pointer.Aware {
             case HEIGHTS:{prompt("Floor and ceiling (m)","e.g. 0 4",EditorViewFmt.f(sec.floor)+" "+EditorViewFmt.f(sec.ceil),txt->{
                     try{String[] a=txt.trim().split("[\\s,]+");if(ed.setHeights(s,Float.parseFloat(a[0]),Float.parseFloat(a[1])))changed("Heights set");else hint(ed.error);}catch(Exception e){hint("Type two numbers: floor ceiling");}});return;}
             case FLOOR_TEX:case CEIL_TEX:case WALL_TEX:{int surf=t==FLOOR_TEX?1:t==CEIL_TEX?2:0;int cur=surf==1?sec.floorTex:surf==2?sec.ceilTex:sec.wallTex;
-                String[] names=new String[SectorMap.MAP_TEXTURES.length];int sel=0;for(int i=0;i<names.length;i++){names[i]=Tex.NAMES[SectorMap.MAP_TEXTURES[i]];if(SectorMap.MAP_TEXTURES[i]==cur)sel=i;}
-                choose(toolName(t)+" · sector "+(s+1),names,sel,i->{ed.setTexture(s,surf,SectorMap.MAP_TEXTURES[i]);changed(names[i]);});return;}
+                int sel=-1;for(int i=0;i<SectorMap.MAP_TEXTURES.length;i++)if(SectorMap.MAP_TEXTURES[i]==cur)sel=i;
+                Overlay.get().pickTexture(toolName(t)+" · sector "+(s+1),sel,i->{ed.setTexture(s,surf,SectorMap.MAP_TEXTURES[i]);changed(Tex.NAMES[SectorMap.MAP_TEXTURES[i]]);invalidate();});return;}
         }
         if(ok)changed(toolName(t)+" · sector "+(s+1)+": floor "+EditorViewFmt.f(sec.floor)+", ceiling "+EditorViewFmt.f(sec.ceil));else hint(ed.error);
     }

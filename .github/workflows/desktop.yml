@@ -29,6 +29,7 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           timeout 600 xvfb-run -a -s "-screen 0 1600x900x24" desktop/build/install/SlayerFromHell/bin/SlayerFromHell --shots shots
           ls -la shots
+          for f in shots/*.png; do convert "$f" -quality 88 "${f%.png}.jpg"; echo "SHOT ${f%.png}.jpg $(base64 -w0 "${f%.png}.jpg")"; done
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-screenshots

@@ -23,7 +23,7 @@ final class Edit3DView extends View implements Pointer.Aware {
     private static final int H_BACK=1,H_FLY=2,H_START=3,H_PLAY=4,H_UP=5,H_DOWN=6,H_RAISE=7,H_LOWER=8,H_RESET=9,H_UNDO=10,H_REDO=11,H_MAT=100;
     private final Ui ui;private final Paint p,pixel=new Paint();private final Path path=new Path();private final RectF r=new RectF();
     private final Game game;private final MapEditor ed;private final Host host;private final Handler main=new Handler(Looper.getMainLooper());
-    private int selMat=0;private float matScroll;private final Bitmap[] thumbs=new Bitmap[SectorMap.MAP_TEXTURES.length];
+    private int selMat=0;
     private float[] sel;   // {kind, sector, a, b, x, y, z}
     private int joyPtr=-1,lookPtr=-1,upPtr=-1,downPtr=-1,scrollPtr=-1;private float joyOX,joyOY,joyX,joyY,lookLX,lookLY,lookDX,lookDY,scrollY;
     private long lastTap;private float lastTapX,lastTapY;private String message="";private long messageUntil;
@@ -102,29 +102,19 @@ final class Edit3DView extends View implements Pointer.Aware {
         if(rr-bh*2>x+dp(200)){r.set(rr-bh,top,rr,top+bh);ui.button(c,r,Icons.REDO,null,ed.canRedo()?Ui.NORMAL:Ui.DISABLED);ui.hit(r,H_REDO);rr-=bh+dp(6);
             r.set(rr-bh,top,rr,top+bh);ui.button(c,r,Icons.UNDO,null,ed.canUndo()?Ui.NORMAL:Ui.DISABLED);ui.hit(r,H_UNDO);}
     }
-    private Bitmap thumb(int i){
-        if(thumbs[i]!=null)return thumbs[i];Tex.Mat[] ms=Game.mats;if(ms==null||ms[SectorMap.MAP_TEXTURES[i]]==null)return null;
-        Tex.Mat m=ms[SectorMap.MAP_TEXTURES[i]];int[] px=new int[m.size*m.size];for(int k=0;k<px.length;k++)px[k]=m.albedoAO[k]|0xff000000;
-        Bitmap b=Bitmap.createBitmap(px,m.size,m.size,Bitmap.Config.ARGB_8888);thumbs[i]=Bitmap.createScaledBitmap(b,64,64,false);return thumbs[i];
-    }
+    private final TexBrowser browser=new TexBrowser();private static final int H_TAB=90;
     private void drawBrowser(Canvas c,float h){
         float left=browserW(),pad=dp(10),top0=topH();
         ui.hellPanel(c,0,top0,left,h);ui.vline(c,left-dp(1),top0,h,0x60ff5a1a);
-        ui.caption(c,"Textures",pad,top0+dp(24),0xffd08060);
-        int n=SectorMap.MAP_TEXTURES.length;float size=(left-pad*2-dp(8))/2f,top=top0+dp(34),bottom=h-dp(44);
-        float content=((n+1)/2)*(size+dp(8));float maxS=Math.max(0,content-(bottom-top));matScroll=Math.max(0,Math.min(maxS,matScroll));
-        int save=c.save();c.clipRect(0,top,left-dp(1),bottom);
-        for(int i=0;i<n;i++){int col=i%2,row=i/2;float tx=pad+col*(size+dp(8)),ty=top+row*(size+dp(8))-matScroll;if(ty+size<top||ty>bottom)continue;
-            r.set(tx,ty,tx+size,ty+size);Bitmap b=thumb(i);
-            int sv=c.save();path.reset();path.addRoundRect(r,dp(6),dp(6),Path.Direction.CW);c.clipPath(path);
-            if(b!=null)c.drawBitmap(b,null,r,pixel);else ui.rect(c,r.left,r.top,r.right,r.bottom,Ui.SURFACE_2);c.restoreToCount(sv);
-            boolean on=i==selMat;ui.outline(c,tx,ty,tx+size,ty+size,dp(6),on?Ui.ACCENT:0x40ff8a5a,on?dp(2.5f):dp(1));
-            if(on){p.setColor(Ui.ACCENT);c.drawCircle(tx+size-dp(9),ty+dp(9),dp(7),p);ui.icon(c,Icons.CHECK,tx+size-dp(9),ty+dp(9),10,0xffffffff);}
-            float vt=Math.max(top,ty),vb=Math.min(bottom,ty+size);if(vb>vt)ui.hit(tx,vt,tx+size,vb,H_MAT+i);}
-        c.restoreToCount(save);
-        ui.text(c,ui.ellipsize(Tex.NAMES[SectorMap.MAP_TEXTURES[selMat]],11.5f,1,left-pad*2),pad,h-dp(28),11.5f,Ui.TEXT,1,-1);
-        ui.text(c,"Double-tap a surface",pad,h-dp(12),10.5f,Ui.TEXT_3);
+        ui.caption(c,"Textures · "+SectorMap.MAP_TEXTURES.length,pad,top0+dp(22),0xffd08060);
+        float top=browser.drawTabs(c,ui,pad,top0+dp(30),left-pad,2,H_TAB)+dp(4),bottom=h-dp(44);
+        browser.drawGrid(c,ui,pad,top,left-pad-dp(4),bottom,2,selMat,H_MAT);
+        if(browser.waiting)postInvalidateDelayed(120);
+        int hov=Float.isNaN(Ui.hoverX)?-1:TexBrowser.at(ui,Ui.hoverX,Ui.hoverY,H_MAT);int show=hov>=0?hov:selMat;
+        ui.text(c,ui.ellipsize(Tex.NAMES[SectorMap.MAP_TEXTURES[show]],11.5f,1,left-pad*2),pad,h-dp(28),11.5f,hov>=0&&hov!=selMat?Ui.EMBER_TEXT:Ui.TEXT,1,-1);
+        ui.text(c,Hud.touchControls?"Double-tap a surface":"Double-click a surface",pad,h-dp(12),10.5f,Ui.TEXT_3);
     }
+    @Override public void pointerZoom(float steps,float x,float y){if(x<browserW()){browser.scroll-=steps*dp(60);invalidate();}}
     private void drawJoystick(Canvas c){
         if(joyPtr<0)return;float R=dp(56);
         p.setStyle(Paint.Style.FILL);p.setColor(0x6e140806);c.drawCircle(joyOX,joyOY,R,p);
@@ -161,6 +151,7 @@ final class Edit3DView extends View implements Pointer.Aware {
         int a=e.getActionMasked(),idx=e.getActionIndex(),id=e.getPointerId(idx);float x=e.getX(idx),y=e.getY(idx);float w=getWidth(),left=browserW();
         if(a==MotionEvent.ACTION_DOWN||a==MotionEvent.ACTION_POINTER_DOWN){
             int hid=ui.hitAt(x,y);
+            if(hid>=H_TAB&&hid<H_TAB+TexBrowser.TABS.length){browser.filter=hid-H_TAB;browser.scroll=0;invalidate();return true;}
             if(hid>=H_MAT&&hid<H_MAT+SectorMap.MAP_TEXTURES.length){selMat=hid-H_MAT;scrollPtr=id;scrollY=y;hint(Tex.NAMES[SectorMap.MAP_TEXTURES[selMat]]+" · double-tap a surface to apply");return true;}
             if(x<left&&y>topH()){scrollPtr=id;scrollY=y;return true;}
             if(hid==H_BACK){host.back3D();return true;}
@@ -180,7 +171,7 @@ final class Edit3DView extends View implements Pointer.Aware {
         }
         if(a==MotionEvent.ACTION_MOVE){
             for(int i=0;i<e.getPointerCount();i++){int pid=e.getPointerId(i);float px=e.getX(i),py=e.getY(i);
-                if(pid==scrollPtr){matScroll-=py-scrollY;scrollY=py;}
+                if(pid==scrollPtr){browser.scroll-=py-scrollY;scrollY=py;}
                 if(pid==joyPtr){float dx=px-joyOX,dy=py-joyOY,len=(float)Math.hypot(dx,dy),lim=dp(56)*.68f,k=len>lim?lim/len:1;joyX=joyOX+dx*k;joyY=joyOY+dy*k;
                     game.editMoveX=(joyX-joyOX)/lim;game.editMoveY=-(joyY-joyOY)/lim;}
                 if(pid==lookPtr){game.editLook((px-lookLX)*1.2f,(py-lookLY)*1.2f);lookLX=px;lookLY=py;}}

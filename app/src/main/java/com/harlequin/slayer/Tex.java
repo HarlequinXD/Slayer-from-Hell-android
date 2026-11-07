@@ -13,9 +13,18 @@ package com.harlequin.slayer;
 final class Tex {
     private Tex(){}
     static final int BRICK=0,METAL_PANEL=1,FLOOR_TILES=2,DIAMOND_PLATE=3,CONCRETE=4,CRATE=5,LIGHT=6,PILLAR=7,LAVA=8,
-            GUNMETAL=9,WOOD=10,LEATHER=11,FABRIC=12,BRASS=13,SHELL=14,COUNT=15;
-    static final String[] NAMES={"Hell brick","Metal panel","Floor tiles","Diamond plate","Concrete","Crate","Light panel","Carved pillar","Lava",
+            GUNMETAL=9,WOOD=10,LEATHER=11,FABRIC=12,BRASS=13,SHELL=14,FIRST_LIB=15,COUNT=FIRST_LIB+TexLib.COUNT;
+    /** Categories for the editor's texture browser. */
+    static final int CAT_CLASSIC=0,CAT_SCIFI=1,CAT_HELL=2,CAT_PROP=3;
+    static final String[] CATEGORY_NAMES={"Classic","Sci-fi","Hell"};
+    static final String[] NAMES=new String[COUNT];
+    static{String[] base={"Hell brick","Metal panel","Floor tiles","Diamond plate","Concrete","Crate","Light panel","Carved pillar","Lava",
             "Gunmetal","Walnut","Leather","Fabric","Brass","Shell hull"};
+        System.arraycopy(base,0,NAMES,0,base.length);for(int i=0;i<TexLib.COUNT;i++)NAMES[FIRST_LIB+i]=TexLib.name(i);}
+    static boolean emissive(int id){return id==LIGHT||id==LAVA||(id>=FIRST_LIB&&TexLib.RECIPES[id-FIRST_LIB].emit>0);}
+    static int category(int id){return id<FIRST_LIB?(id<=LAVA?CAT_CLASSIC:CAT_PROP):TexLib.category(id-FIRST_LIB);}
+    /** Flowing, pulsing emissive surfaces (lava and the magma family): their UVs scroll. */
+    static boolean flows(int id){return id==LAVA||(id>=FIRST_LIB&&TexLib.flows(id-FIRST_LIB));}
 
     /** One generated material. */
     static final class Mat {
@@ -50,20 +59,23 @@ final class Tex {
             if(d<f1){f2=f1;f1=d;id=hashI(wx,wy,seed+3);}else if(d<f2)f2=d;}
         return new float[]{f1,f2,(id&0xffff)/65535f};
     }
-    private static float clamp(float x){return x<0?0:x>1?1:x;}
-    private static float smooth(float a,float b,float x){float t=clamp((x-a)/(b-a));return t*t*(3-2*t);}
-    private static float mix(float a,float b,float t){return a+(b-a)*t;}
+    static float clamp(float x){return x<0?0:x>1?1:x;}
+    static float smooth(float a,float b,float x){float t=clamp((x-a)/(b-a));return t*t*(3-2*t);}
+    static float mix(float a,float b,float t){return a+(b-a)*t;}
 
     // ------------------------------------------------------------------ painting
     /** Working buffers for one material: height, albedo, ao, roughness, metal, emission. */
-    private static final class Paint {
+    static final class Paint {
         final int n;final float[] h,r,g,b,ao,rough,metal,emit;
         Paint(int n){this.n=n;int s=n*n;h=new float[s];r=new float[s];g=new float[s];b=new float[s];ao=new float[s];rough=new float[s];metal=new float[s];emit=new float[s];java.util.Arrays.fill(ao,1);}
         void col(int i,float rr,float gg,float bb){r[i]=rr;g[i]=gg;b[i]=bb;}
     }
 
-    static Mat make(int id){
-        int n=256;Paint P=new Paint(n);float pom=.04f,tile=.5f,normalK=4,emit=0;
+    static Mat make(int id){return make(id,256);}
+    /** Material id at n x n texels (256 in the game, small for editor thumbnails). */
+    static Mat make(int id,int n){
+        Paint P=new Paint(n);float pom=.04f,tile=.5f,normalK=4,emit=0;
+        if(id>=FIRST_LIB){float[] k=TexLib.paint(P,id-FIRST_LIB);cavity(P,1f);Mat m=new Mat(n);m.pom=k[0];m.tile=k[1];m.emit=k[3];pack(P,m,k[2]);return m;}
         switch(id){
             case BRICK:brick(P);pom=.06f;tile=.5f;normalK=5;break;
             case METAL_PANEL:metalPanel(P);pom=.035f;tile=.5f;normalK=4;break;
@@ -89,7 +101,7 @@ final class Tex {
         int n=P.n;float[] bl=blur(P.h,n,n/64+2);
         for(int i=0;i<n*n;i++){float c=clamp(1-Math.max(0,bl[i]-P.h[i])*6f*k);P.ao[i]*=c;}
     }
-    private static float[] blur(float[] a,int n,int rad){
+    static float[] blur(float[] a,int n,int rad){
         float[] t=new float[n*n],o=new float[n*n];float inv=1f/(2*rad+1);
         for(int y=0;y<n;y++){float s=0;for(int k=-rad;k<=rad;k++)s+=a[y*n+Math.floorMod(k,n)];
             for(int x=0;x<n;x++){t[y*n+x]=s*inv;s+=a[y*n+Math.floorMod(x+rad+1,n)]-a[y*n+Math.floorMod(x-rad,n)];}}
@@ -108,7 +120,7 @@ final class Tex {
     }
     private static float srgb(float lin){lin=clamp(lin);return lin<=.0031308f?lin*12.92f:(float)(1.055*Math.pow(lin,1/2.4)-.055);}
     private static int b8(float v){return Math.max(0,Math.min(255,Math.round(v*255)));}
-    private static float lin(int c){float s=c/255f;return s<=.04045f?s/12.92f:(float)Math.pow((s+.055)/1.055,2.4);}
+    static float lin(int c){float s=c/255f;return s<=.04045f?s/12.92f:(float)Math.pow((s+.055)/1.055,2.4);}
 
     // ------------------------------------------------------------------ materials
     private static void brick(Paint P){

@@ -20,7 +20,10 @@ final class SectorMap {
     static final String[] THING_NAMES={"Demon","Health orb","Energy cells","Lamp · warm","Lamp · hellfire","Lamp · cold blue","Lamp · white","Player start"};
     static final int[] LAMP_RGB={0,0,0,0xffc890,0xff5020,0x7aa8ff,0xffffff};
     /** Textures a map may use (indices into Tex). */
-    static final int[] MAP_TEXTURES={Tex.BRICK,Tex.METAL_PANEL,Tex.FLOOR_TILES,Tex.DIAMOND_PLATE,Tex.CONCRETE,Tex.CRATE,Tex.LIGHT,Tex.PILLAR,Tex.LAVA};
+    /** Textures a map can use: the nine classic ones, then the library's 50 sci-fi and 50 hell materials. */
+    static final int[] MAP_TEXTURES=new int[9+TexLib.COUNT];
+    static{int[] classic={Tex.BRICK,Tex.METAL_PANEL,Tex.FLOOR_TILES,Tex.DIAMOND_PLATE,Tex.CONCRETE,Tex.CRATE,Tex.LIGHT,Tex.PILLAR,Tex.LAVA};
+        System.arraycopy(classic,0,MAP_TEXTURES,0,9);for(int i=0;i<TexLib.COUNT;i++)MAP_TEXTURES[9+i]=Tex.FIRST_LIB+i;}
 
     static final class Vertex {float x,y;Vertex(float x,float y){this.x=x;this.y=y;}}
     static final class Sector {

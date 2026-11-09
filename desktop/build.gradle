@@ -5,6 +5,7 @@ def lwjgl = '3.3.4'
 def natives = ['natives-windows', 'natives-linux']
 dependencies {
     implementation platform("org.lwjgl:lwjgl-bom:$lwjgl")
+    implementation 'javazoom:jlayer:1.0.1'   // MP3 decoding for the recorded narration
     ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl'].each { m ->
         implementation "org.lwjgl:$m"
         natives.each { n -> runtimeOnly "org.lwjgl:$m::$n" }

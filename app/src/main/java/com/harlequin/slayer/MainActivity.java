@@ -36,6 +36,7 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
         if(android.os.Build.VERSION.SDK_INT>=28)getWindow().getAttributes().layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         sfx=new Sfx(this);store=new MapStore(getFilesDir());
         tts=new AndroidVoice(this);Narrator.voice=tts;   // Slayer's voice for the story
+        Narrator.recordings=new AndroidRecordings(this);   // ... and her recorded performance, where there is one
         music=new Music();music.prepare(MusicSynth.HELL);music.prepare(MusicSynth.TECH);   // rendered in the background while she reads the menu
         root=new FrameLayout(this);setContentView(root);
         layer=new Overlay(this);root.addView(layer);controls=new Controls(dev,layer,this);
@@ -268,5 +269,49 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
             if(!Boolean.TRUE.equals(results.remove(id))||!wav.exists())throw new java.io.IOException("speech failed");
         }
         void shutdown(){try{tts.stop();tts.shutdown();}catch(Throwable ignored){}}
+    }
+
+    /** Her recorded narration (assets/narration/*.mp3), decoded with the phone's own MP3 decoder. */
+    static final class AndroidRecordings implements Narrator.Recordings {
+        private final android.content.Context ctx;
+        AndroidRecordings(android.content.Context c){ctx=c.getApplicationContext();}
+        @Override public float[][] load(String asset) throws Exception {
+            java.io.File tmp=new java.io.File(ctx.getCacheDir(),"clip-"+System.nanoTime()+".mp3");
+            try{
+                try(java.io.InputStream in=ctx.getAssets().open(asset);java.io.OutputStream o=new java.io.FileOutputStream(tmp)){
+                    byte[] buf=new byte[1<<15];int n;while((n=in.read(buf))>0)o.write(buf,0,n);}
+                catch(java.io.FileNotFoundException e){return null;}   // not recorded
+                android.media.MediaExtractor ex=new android.media.MediaExtractor();android.media.MediaCodec dec=null;
+                try{
+                    ex.setDataSource(tmp.getAbsolutePath());
+                    android.media.MediaFormat fmt=null;
+                    for(int i=0;i<ex.getTrackCount();i++){android.media.MediaFormat f=ex.getTrackFormat(i);String m=f.getString(android.media.MediaFormat.KEY_MIME);
+                        if(m!=null&&m.startsWith("audio/")){ex.selectTrack(i);fmt=f;break;}}
+                    if(fmt==null)return null;
+                    int rate=fmt.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE),ch=fmt.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT);
+                    dec=android.media.MediaCodec.createDecoderByType(fmt.getString(android.media.MediaFormat.KEY_MIME));dec.configure(fmt,null,null,0);dec.start();
+                    float[] out=new float[rate*20];int len=0;boolean inDone=false;
+                    android.media.MediaCodec.BufferInfo info=new android.media.MediaCodec.BufferInfo();
+                    for(int guard=0;guard<200000;guard++){
+                        if(!inDone){int ii=dec.dequeueInputBuffer(10000);
+                            if(ii>=0){java.nio.ByteBuffer b=dec.getInputBuffer(ii);int n=ex.readSampleData(b,0);
+                                if(n<0){dec.queueInputBuffer(ii,0,0,0,android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM);inDone=true;}
+                                else{dec.queueInputBuffer(ii,0,n,ex.getSampleTime(),0);ex.advance();}}}
+                        int oi=dec.dequeueOutputBuffer(info,10000);
+                        if(oi==android.media.MediaCodec.INFO_OUTPUT_FORMAT_CHANGED){android.media.MediaFormat of=dec.getOutputFormat();
+                            rate=of.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE);ch=of.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT);}
+                        else if(oi>=0){
+                            java.nio.ByteBuffer b=dec.getOutputBuffer(oi);
+                            if(b!=null&&info.size>0){b.position(info.offset);b.limit(info.offset+info.size);
+                                java.nio.ShortBuffer sb=b.order(java.nio.ByteOrder.nativeOrder()).asShortBuffer();int frames=sb.remaining()/ch;
+                                if(len+frames>out.length)out=java.util.Arrays.copyOf(out,Math.max(out.length*2,len+frames));
+                                for(int f=0;f<frames;f++){float v=0;for(int c=0;c<ch;c++)v+=sb.get(f*ch+c);out[len++]=v/(32768f*ch);}}
+                            dec.releaseOutputBuffer(oi,false);
+                            if((info.flags&android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM)!=0)break;}
+                    }
+                    return len==0?null:new float[][]{java.util.Arrays.copyOf(out,len),{rate}};
+                }finally{if(dec!=null){try{dec.stop();}catch(Throwable ignored){}dec.release();}ex.release();}
+            }finally{tmp.delete();}
+        }
     }
 }

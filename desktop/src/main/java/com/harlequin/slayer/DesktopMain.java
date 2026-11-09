@@ -65,7 +65,7 @@ public final class DesktopMain implements MenuView.Host,EditorView.Host,Edit3DVi
         ctx=new Context(home,density);
         sfx=new Sfx(ctx);store=new MapStore(ctx.getFilesDir());
         music=new Music();if(shots==null){music.prepare(MusicSynth.HELL);music.prepare(MusicSynth.TECH);}
-        if(shots==null)Narrator.voice=DesktopVoice.detect(ctx.getCacheDir());   // Slayer reads the story aloud
+        if(shots==null){Narrator.voice=DesktopVoice.detect(ctx.getCacheDir());Narrator.recordings=new DesktopVoice.Recordings();}   // Slayer reads the story aloud
         layer=new Overlay(ctx);controls=new Controls(dev,layer,this);controls.toggleFullscreen=this::toggleFullscreen;
         MenuView.display=new MenuView.Display(){public String[] modes(){return MODES;}public int mode(){return mode;}
             public void setMode(int i){applyMode(i);ctx.getSharedPreferences("slayer",0).edit().putInt("display",mode).apply();}};

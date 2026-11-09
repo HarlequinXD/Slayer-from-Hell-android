@@ -1,0 +1,58 @@
+name: Narrate the story
+
+# Records Slayer's narration of every story chapter with OpenAI's expressive voice (needs the OPENAI_API_KEY
+# repository secret), commits the clips into the game's assets, then starts the APK and Windows builds.
+# Only paragraphs that are new, edited, or recorded with a different voice are recorded again.
+on:
+  workflow_dispatch:
+    inputs:
+      voice:
+        description: 'OpenAI voice'
+        type: choice
+        default: marin
+        options: [marin, cedar, coral, sage, shimmer, nova, ballad, fable, alloy, ash, echo, onyx, verse]
+      force:
+        description: 'Re-record every paragraph'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency: narration
+
+jobs:
+  narrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Record the story
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: python3 tools/narration/generate.py --voice "${{ inputs.voice }}" ${{ inputs.force && '--force' || '' }}
+
+      - name: Commit the recordings
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/assets/narration
+          if git diff --cached --quiet; then echo "Nothing new to record."; echo "changed=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          git commit -m "Narration: record the story (${{ inputs.voice }})"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # pushes made with the workflow token don't start other workflows by themselves
+      - name: Build the game with her voice
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run android.yml --ref "${GITHUB_REF_NAME}"
+          gh workflow run desktop.yml --ref "${GITHUB_REF_NAME}"

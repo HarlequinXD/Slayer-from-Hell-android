@@ -36,6 +36,24 @@ final class DesktopVoice implements Narrator.Voice {
                 if(new File(p,e).canExecute())return new DesktopVoice(false,e,tmpDir);
         return null;
     }
+    /** Her recorded narration (assets/narration/*.mp3 on the classpath), decoded with JLayer. */
+    static final class Recordings implements Narrator.Recordings {
+        @Override public float[][] load(String asset) throws Exception {
+            java.io.InputStream raw=DesktopVoice.class.getClassLoader().getResourceAsStream(asset);if(raw==null)return null;
+            try(java.io.InputStream in=new java.io.BufferedInputStream(raw)){
+                javazoom.jl.decoder.Bitstream bs=new javazoom.jl.decoder.Bitstream(in);javazoom.jl.decoder.Decoder d=new javazoom.jl.decoder.Decoder();
+                float[] out=new float[24000*20];int len=0,rate=24000;javazoom.jl.decoder.Header h;
+                while((h=bs.readFrame())!=null){
+                    javazoom.jl.decoder.SampleBuffer sb=(javazoom.jl.decoder.SampleBuffer)d.decodeFrame(h,bs);
+                    int ch=sb.getChannelCount(),frames=sb.getBufferLength()/ch;rate=sb.getSampleFrequency();short[] buf=sb.getBuffer();
+                    if(len+frames>out.length)out=java.util.Arrays.copyOf(out,Math.max(out.length*2,len+frames));
+                    for(int f=0;f<frames;f++){float v=0;for(int c=0;c<ch;c++)v+=buf[f*ch+c];out[len++]=v/(32768f*ch);}
+                    bs.closeFrame();}
+                bs.close();
+                return len==0?null:new float[][]{java.util.Arrays.copyOf(out,len),{rate}};
+            }
+        }
+    }
     @Override public void render(String text,File wav) throws Exception {
         File in=new File(dir,"narration-"+System.nanoTime()+".txt");
         try{

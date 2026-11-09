@@ -38,12 +38,18 @@ public class StoryTest {
         float[][] w=Narrator.readWav(new java.io.ByteArrayInputStream(b.toByteArray()));
         assertEquals(n,w[0].length);assertEquals(rate,(int)w[1][0]);
         // ... and comes out stereo at 44.1 kHz, silence trimmed, a reverb tail added, loud but not clipping
-        short[] v=Narrator.trailer(w[0],rate);int frames=v.length/2;
+        short[] v=Narrator.trailer(w[0],rate,false);int frames=v.length/2;
         assertTrue("trimmed",frames<Narrator.RATE*3.2f);assertTrue("kept the speech",frames>Narrator.RATE*2.5f);
         int pk=0;for(short s:v)pk=Math.max(pk,Math.abs(s));assertTrue(pk>20000&&pk<32767);
         short[] br=Narrator.braam(5f,new java.util.Random(1));assertEquals(Narrator.RATE*5*2,br.length);
         double sum=0;pk=0;for(short s:br){sum+=s*(double)s;pk=Math.max(pk,Math.abs(s));}
         assertTrue("audible",Math.sqrt(sum/br.length)>2000);assertTrue("not clipping",pk<32767);
         assertTrue("fades out",Math.abs(br[br.length-2])<200);
+    }
+    @Test public void recordingsAreNamedLikeTheRecorder(){
+        // tools/narration/generate.py names each paragraph's clip by the CRC-32 of its UTF-8 text
+        String first=Story.CHAPTERS[0].text.substring(0,Story.CHAPTERS[0].text.indexOf('\n'));
+        assertEquals("narration/967255bf.mp3",Narrator.clipName(first));
+        short[] v=Narrator.trailer(new float[]{0,.5f,-.5f,.25f,0},24000,true);assertTrue(v.length>0);
     }
 }

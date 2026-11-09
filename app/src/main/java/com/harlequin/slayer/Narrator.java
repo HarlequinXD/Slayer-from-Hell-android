@@ -13,9 +13,10 @@ import java.util.ArrayList;
 import java.util.Random;
 
 /**
- * Slayer reads the story aloud, cut like a movie trailer. Each paragraph of a chapter is spoken by the platform's own
- * text-to-speech engine ({@link Voice}: Android's TextToSpeech, Windows' System.Speech), then given the trailer
- * treatment in code (a deeper sub layer, chest and presence EQ, heavy compression, a little grit, a hall) and played
+ * Slayer reads the story aloud, cut like a movie trailer. Each paragraph of a chapter is played from its recording
+ * (assets/narration/&lt;crc32&gt;.mp3, recorded with an expressive AI voice by tools/narration/generate.py) when there is
+ * one, or else spoken by the platform's own text-to-speech engine ({@link Voice}: Android's TextToSpeech, Windows'
+ * System.Speech). Either way it is given the trailer treatment in code (a deeper sub layer, chest and presence EQ, heavy compression, a little grit, a hall) and played
  * with procedural BRAAMs: one to open, one after every short "punchline" paragraph, and a big one to close. The game
  * music ducks while she speaks. {@link StoryView} types the text out in step with her voice.
  */
@@ -24,6 +25,10 @@ final class Narrator {
     interface Voice {void render(String text,File wav) throws Exception;}
     /** Set by the platform at start-up; null when there is no speech engine (then the story is read silently). */
     static volatile Voice voice;
+    /** Decodes a recording from the game's assets to {mono samples, {sample rate}}, or null if there isn't one. */
+    interface Recordings {float[][] load(String asset) throws Exception;}
+    /** Set by the platform at start-up. */
+    static volatile Recordings recordings;
     /** The Narration setting. */
     static volatile boolean enabled=true;
     static final int RATE=44100,PREPARING=0,SPEAKING=1,DONE=2,FAILED=3;
@@ -34,19 +39,19 @@ final class Narrator {
     /** Starts reading a chapter (stopping any other reading), or returns null if narration is off or impossible. */
     static synchronized Narrator start(Story.Chapter ch,File tmpDir){
         if(current!=null){current.stop();current=null;}
-        if(!enabled||voice==null)return null;
-        current=new Narrator(ch.text,tmpDir,voice);return current;
+        if(!enabled||(voice==null&&recordings==null))return null;
+        current=new Narrator(ch.text,tmpDir,voice,recordings);return current;
     }
     static synchronized void pauseAll(){if(current!=null)current.paused=true;}
     static synchronized void resumeAll(){if(current!=null)current.paused=false;}
 
     final String[] paras;final int[] paraStart;
     private final short[][] voiced;private final long[] vStart;private final int[] vLen;
-    private final File dir;private final Voice engine;
+    private final File dir;private final Voice engine;private final Recordings recorded;
     private volatile int state=PREPARING;private volatile boolean stopping,paused;private volatile long played;
 
-    Narrator(String text,File dir,Voice engine){
-        this.dir=dir;this.engine=engine;
+    Narrator(String text,File dir,Voice engine,Recordings recorded){
+        this.dir=dir;this.engine=engine;this.recorded=recorded;
         ArrayList<int[]> sp=spans(text);paras=new String[sp.size()];paraStart=new int[sp.size()];
         for(int k=0;k<paras.length;k++){paraStart[k]=sp.get(k)[0];paras[k]=text.substring(sp.get(k)[0],sp.get(k)[1]);}
         voiced=new short[paras.length][];vStart=new long[paras.length];vLen=new int[paras.length];java.util.Arrays.fill(vStart,-1);
@@ -58,6 +63,11 @@ final class Narrator {
         ArrayList<int[]> out=new ArrayList<>();int i=0;
         for(String p:text.split("\n",-1)){if(!p.trim().isEmpty())out.add(new int[]{i,i+p.length()});i+=p.length()+1;}
         return out;
+    }
+    /** The asset a paragraph's recording lives in: named by the CRC-32 of its text, so edited text is re-recorded. */
+    static String clipName(String paragraph){
+        java.util.zip.CRC32 c=new java.util.zip.CRC32();c.update(paragraph.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return String.format(java.util.Locale.US,"narration/%08x.mp3",c.getValue());
     }
     int state(){return state;}
     /** Fades her out (Skip / Continue / leaving the screen). */
@@ -73,9 +83,12 @@ final class Narrator {
     private void synthesise(){
         try{
             for(int i=0;i<paras.length&&!stopping;i++){
+                float[][] pcm=null;
+                if(recorded!=null)try{pcm=recorded.load(clipName(paras[i]));}catch(Throwable e){android.util.Log.e("Slayer","narration clip",e);}
+                if(pcm!=null){voiced[i]=trailer(pcm[0],(int)pcm[1][0],true);continue;}   // her recorded performance
+                if(engine==null)throw new IOException("no recording and no speech engine for paragraph "+i);
                 File wav=new File(dir,"narration-"+i+"-"+System.nanoTime()+".wav");
-                try{engine.render(paras[i],wav);float[][] pcm=readWav(new FileInputStream(wav));
-                    voiced[i]=trailer(pcm[0],(int)pcm[1][0]);}
+                try{engine.render(paras[i],wav);pcm=readWav(new FileInputStream(wav));voiced[i]=trailer(pcm[0],(int)pcm[1][0],false);}
                 finally{wav.delete();}
             }
         }catch(Throwable e){android.util.Log.e("Slayer","narration",e);state=FAILED;stopping=true;}
@@ -145,8 +158,12 @@ final class Narrator {
     private static int le32(byte[] b,int p){return le16(b,p)|(le16(b,p+2)<<16);}
 
     // ---------------------------------------------------------------- the trailer voice
-    /** Her voice as it comes from the engine, made into a trailer voice-over: stereo 44.1 kHz, with a reverb tail. */
-    static short[] trailer(float[] in,int rate){
+    /**
+     * Her voice as it comes from the engine, made into a trailer voice-over: stereo 44.1 kHz, with a reverb tail.
+     * A recorded performance (`acted`) already has its own dynamics and depth, so it gets a gentler hand.
+     */
+    static short[] trailer(float[] in,int rate,boolean acted){
+        final float SUB=acted?.1f:.22f,RATIO=acted?2f:3f,THR=acted?.3f:.22f,GRIT=acted?1.2f:1.5f;
         // to 44.1 kHz, without the engine's leading and trailing silence
         int a=0,z=in.length-1;while(a<z&&Math.abs(in[a])<.01f)a++;while(z>a&&Math.abs(in[z])<.01f)z--;
         a=Math.max(0,a-rate/50);z=Math.min(in.length-1,z+rate/20);
@@ -158,15 +175,15 @@ final class Narrator {
         float[] y=new float[n];float hp=0,prev=0,body=0,pres1=0,pres2=0;
         float aHp=1-(float)Math.exp(-2*Math.PI*80/RATE),aBody=1-(float)Math.exp(-2*Math.PI*220/RATE),
             aP1=1-(float)Math.exp(-2*Math.PI*1800/RATE),aP2=1-(float)Math.exp(-2*Math.PI*5500/RATE);
-        for(int i=0;i<n;i++){float s=x[i]/pk+.22f*sub[i]/Math.max(1e-4f,pk);
+        for(int i=0;i<n;i++){float s=x[i]/pk+SUB*sub[i]/Math.max(1e-4f,pk);
             hp+=aHp*(s-hp);s-=hp;                                  // rumble out
             body+=aBody*(s-body);pres1+=aP1*(s-pres1);pres2+=aP2*(s-pres2);
             y[i]=s+.55f*body+.35f*(pres2-pres1);}                  // chest + presence
         // heavy compression (3:1 above a low threshold), then a little grit
         float env=0,att=1-(float)Math.exp(-1/(.004*RATE)),rel=1-(float)Math.exp(-1/(.12*RATE)),ep=0;
         float[] e=new float[n];for(int i=0;i<n;i++){float v=Math.abs(y[i]);env+=(v>env?att:rel)*(v-env);e[i]=env;ep=Math.max(ep,env);}
-        float thr=ep*.22f;for(int i=0;i<n;i++)if(e[i]>thr)y[i]*=(float)Math.pow(e[i]/thr,-2/3.0);
-        float g=1/Math.max(1e-6f,peak(y));for(int i=0;i<n;i++)y[i]=(float)(Math.tanh(1.5*y[i]*g)/Math.tanh(1.5));
+        float thr=ep*THR;for(int i=0;i<n;i++)if(e[i]>thr)y[i]*=(float)Math.pow(e[i]/thr,1.0/RATIO-1);
+        float g=1/Math.max(1e-6f,peak(y));for(int i=0;i<n;i++)y[i]=(float)(Math.tanh(GRIT*y[i]*g)/Math.tanh(GRIT));
         // a stereo hall with a short pre-delay, and a tail
         int tail=(int)(1.4f*RATE),pre=(int)(.025f*RATE);float[][] wet=hall(y,n+tail,pre);
         short[] o=new short[(n+tail)*2];float mx=1e-6f;

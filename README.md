@@ -35,6 +35,7 @@ A first-person shooter test scene in the style of Quake/Doom, written from scrat
   * **Navigation** (`Nav.java`): a Dijkstra flow field over the grid toward the warden that respects stairs, drops, headroom and lava; demons go straight at her when the way is clear.
   * **Combat** (`Enemies.java`): only two demons may attack at once (attack tokens). Fireballs lead their target a little, hurt on contact (12) and splash (7), and light the scene blue. Demons have 150 health: shotgun pellets do up to 11 each with range falloff and double on head shots, and the chainsaw chews through them. Dying resets the keep.
 * **Sound**: all effects are synthesised in code.
+* **Narration** (`Narrator`): Slayer reads each story chapter aloud like a movie-trailer voice-over. The words come from the platform's own speech engine (Android's TextToSpeech with the best installed English female voice, pitched down and slowed; on Windows System.Speech through PowerShell; espeak-ng on Linux), then get the trailer treatment in code: a sub-octave layer, chest and presence EQ, heavy compression, grit and a stereo hall. Procedural BRAAMs (detuned distorted saws, sub drop, impact) open the chapter, land after each short punchline paragraph and close it, and the music ducks under her voice. The text types out in step with her. Settings → Narration turns it off.
 
 Controls: left side = move stick, right side = drag to look (also while holding Fire), FIRE / RELOAD / JUMP buttons (hold Jump to bunny-hop).
 

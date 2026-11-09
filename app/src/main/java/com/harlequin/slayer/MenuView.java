@@ -54,13 +54,13 @@ final class MenuView extends View implements Pointer.Aware {
     // ---------------------------------------------------------------- settings
     static void loadSettings(Context c){SharedPreferences s=c.getSharedPreferences("slayer",0);
         Skill.current=Math.max(0,Math.min(4,s.getInt("skill",Skill.MEDIUM)));Game.lookSens=s.getFloat("sens",.0055f);Game.invertLook=s.getBoolean("invert",false);Game.RENDER_LINES=s.getInt("lines",270);Hud.showFps=s.getBoolean("fps",true);Game.aimAssist=s.getBoolean("aim",true);
-        Music.volume=s.getFloat("music",.8f);}
+        Music.volume=s.getFloat("music",.8f);Narrator.enabled=s.getBoolean("narration",true);}
     /** The furthest campaign map she has reached (maps up to it can be played). */
     static int unlocked(Context c){return Math.max(0,Math.min(Maps.count()-1,c.getSharedPreferences("slayer",0).getInt("campaign",0)));}
     /** Map `next` is open now (she finished the one before it). */
     static void unlock(Context c,int next){SharedPreferences s=c.getSharedPreferences("slayer",0);int n=Math.min(next,Maps.count()-1);
         SharedPreferences.Editor e=s.edit();if(n>s.getInt("campaign",0))e.putInt("campaign",n);if(next>=Maps.count())e.putBoolean("finished",true);e.apply();}
-    private void saveSettings(){prefs.edit().putFloat("sens",Game.lookSens).putBoolean("invert",Game.invertLook).putInt("lines",Game.RENDER_LINES).putBoolean("fps",Hud.showFps).putBoolean("aim",Game.aimAssist).putFloat("music",Music.volume).apply();}
+    private void saveSettings(){prefs.edit().putFloat("sens",Game.lookSens).putBoolean("invert",Game.invertLook).putInt("lines",Game.RENDER_LINES).putBoolean("fps",Hud.showFps).putBoolean("aim",Game.aimAssist).putFloat("music",Music.volume).putBoolean("narration",Narrator.enabled).apply();}
 
     // ---------------------------------------------------------------- drawing
     @Override protected void onDraw(Canvas c){
@@ -126,7 +126,7 @@ final class MenuView extends View implements Pointer.Aware {
         ui.hit(l,t,rr,b,id);
     }
     private static final String[] MAIN_ITEMS={"Campaign","Custom levels","Level editor","Settings","Quit"};
-    private static final String[] MAIN_SUBS={"Eight maps · the story of Slayer","Play the levels you've built","Build a level with sectors and entities","Look speed, graphics, music","Leave the game"};
+    private static final String[] MAIN_SUBS={"Eight maps · the story of Slayer","Play the levels you've built","Build a level with sectors and entities","Look speed, graphics, music, narration","Leave the game"};
     private static final int[] MAIN_ICONS={Icons.PLAY,Icons.FOLDER,Icons.SECTORS,Icons.LAYERS,Icons.CANCEL};
     private void mainMenu(Canvas c,float w,float h){
         float bw=Math.min(dp(360),w*.42f),l=w-bw-dp(40),rr=w-dp(40),bh=Math.min(dp(62),(h-dp(80))/5.6f),gap=dp(10);
@@ -180,11 +180,11 @@ final class MenuView extends View implements Pointer.Aware {
     }
     private static final int[] LINES={200,270,360,540};
     private void settings(Canvas c,float w,float h){
-        String[] labels=display!=null?new String[]{"Display","Look speed","Invert look","Render resolution","Show frame rate","Aim assist","Music"}:new String[]{"Look speed","Invert look","Render resolution","Show frame rate","Aim assist","Music"};
+        String[] labels=display!=null?new String[]{"Display","Look speed","Invert look","Render resolution","Show frame rate","Aim assist","Music","Narration"}:new String[]{"Look speed","Invert look","Render resolution","Show frame rate","Aim assist","Music","Narration"};
         int off=display!=null?1:0;
         float l=dp(80),rr=Math.min(w-dp(40),l+dp(560)),top=dp(88),gap=Math.min(dp(8),Math.max(dp(4),(h-top-dp(12))*.025f)),
             rowH=Math.min(dp(50),(h-top-dp(12)-gap*(labels.length-1))/labels.length);   // rows shrink to fit short screens
-        String[] vals={String.format(java.util.Locale.US,"%.1f",Game.lookSens*1000),Game.invertLook?"On":"Off",Game.RENDER_LINES+" lines"+(Game.RENDER_LINES==270?" (like RPG Pocket Editor)":""),Hud.showFps?"On":"Off",Game.aimAssist?"On":"Off",Music.volume<=0?"Off":Math.round(Music.volume*100)+"%"};
+        String[] vals={String.format(java.util.Locale.US,"%.1f",Game.lookSens*1000),Game.invertLook?"On":"Off",Game.RENDER_LINES+" lines"+(Game.RENDER_LINES==270?" (like RPG Pocket Editor)":""),Hud.showFps?"On":"Off",Game.aimAssist?"On":"Off",Music.volume<=0?"Off":Math.round(Music.volume*100)+"%",Narrator.enabled?"On":"Off"};
         if(display!=null){String[] v=new String[vals.length+1];v[0]=display.modes()[display.mode()]+"  ·  F11";System.arraycopy(vals,0,v,1,vals.length);vals=v;}
         for(int i=0;i<labels.length;i++){float t=top+i*(rowH+gap);
             ui.round(c,l,t,rr,t+rowH,dp(10),0xb0140808);ui.outline(c,l,t,rr,t+rowH,dp(10),0x40ffffff,dp(1));
@@ -254,6 +254,7 @@ final class MenuView extends View implements Pointer.Aware {
             else if(id==H_SET+3)Hud.showFps=!Hud.showFps;
             else if(id==H_SET+4)Game.aimAssist=!Game.aimAssist;
             else if(id==H_SET+5){float[] v={0,.4f,.6f,.8f,1f};int k=0;for(int i=0;i<v.length;i++)if(Math.abs(v[i]-Music.volume)<.05f)k=i;Music.volume=v[(k+1)%v.length];}
+            else if(id==H_SET+6)Narrator.enabled=!Narrator.enabled;
             saveSettings();return;}
         if(id==H_ITEM+20){host.resume();return;}
         if(id==H_ITEM+21){host.restart();return;}

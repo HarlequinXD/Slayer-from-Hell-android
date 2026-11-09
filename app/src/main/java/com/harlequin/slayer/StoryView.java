@@ -16,6 +16,7 @@ import java.util.ArrayList;
  * A chapter of the story between two maps: the chapter heading and title burn in, then Slayer's words type
  * themselves out over a dark, slowly breathing fire, line by line, scrolling as they go. Tap (or A / click / Enter)
  * to show the rest at once, then again to continue; the page can be scrolled back to re-read. Skip is always there.
+ * With narration on, Slayer reads it aloud ({@link Narrator}) and the text types out in step with her voice.
  */
 final class StoryView extends View implements Pointer.Aware {
     private final Story.Chapter ch;private final Runnable done;private final Ui ui;private final Paint p,text=new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -23,6 +24,7 @@ final class StoryView extends View implements Pointer.Aware {
     private float wrapW=-1,typed,scroll,maxScroll,t;private long last;private boolean finished,autoScroll=true,left;
     private float downY,lastY;private boolean dragged;private int pressed=-1;
     private final float[] embers=new float[60*4];
+    private final Narrator nar;
     private static final float CPS=42;   // characters per second
     private static final int H_SKIP=1,H_GO=2;
 
@@ -31,10 +33,11 @@ final class StoryView extends View implements Pointer.Aware {
         text.setTypeface(Typeface.create("serif",Typeface.NORMAL));text.setColor(0xffe8d6c4);
         java.util.Random r=new java.util.Random(7);for(int i=0;i<60;i++){embers[i*4]=r.nextFloat();embers[i*4+1]=r.nextFloat();embers[i*4+2]=.3f+r.nextFloat()*.7f;embers[i*4+3]=r.nextFloat()*6.28f;}
         setFocusable(true);
+        nar=Narrator.start(ch,c.getCacheDir());
     }
     private float dp(float v){return ui.dp(v);}
     /** Finish the chapter (Skip, or Continue once it has been read). */
-    void finish(){if(left)return;left=true;if(done!=null)done.run();}
+    void finish(){if(left)return;left=true;if(nar!=null)nar.stop();if(done!=null)done.run();}
     /** A press anywhere: the rest of the text at once, or on to the next map. */
     void advance(){if(!finished){typed=ch.text.length();finished=true;}else finish();invalidate();}
 
@@ -69,7 +72,11 @@ final class StoryView extends View implements Pointer.Aware {
         float bodyTop=top+dp(70),bodyBottom=h-dp(64);
         ui.round(c,l-dp(2),bodyTop-dp(4),l+dp(56),bodyTop-dp(2),dp(1),0x90ff5a1a);
         wrap(colW);
-        if(t>1.0f&&!finished){typed+=dt*CPS;if(typed>=ch.text.length()){typed=ch.text.length();finished=true;}}
+        if(t>1.0f&&!finished){
+            int st=nar==null?Narrator.FAILED:nar.state();
+            if(st==Narrator.SPEAKING||st==Narrator.DONE)typed=Math.max(typed,st==Narrator.DONE?ch.text.length():nar.position());   // in step with her voice
+            else if(st!=Narrator.PREPARING||t>8f)typed+=dt*CPS;   // no voice (or it never came): type on our own
+            if(typed>=ch.text.length()){typed=ch.text.length();finished=true;}}
         float lh=dp(16)*1.62f;int n=(int)typed;float lastY=0;
         int save=c.save();c.clipRect(0,bodyTop,w,bodyBottom);
         for(int k=0;k<lines.size();k++){int st=starts.get(k);if(st>n)break;String s=lines.get(k);int vis=Math.min(s.length(),n-st);if(vis<0)break;

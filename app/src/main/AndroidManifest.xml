@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+    <!-- the phone's text-to-speech engine, for Slayer's narration (Android 11+ needs this to see it) -->
+    <queries>
+        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
+    </queries>
     <application
         android:label="Slayer from Hell"
         android:icon="@mipmap/ic_launcher"

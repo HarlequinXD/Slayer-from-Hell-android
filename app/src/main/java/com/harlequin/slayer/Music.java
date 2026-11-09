@@ -13,6 +13,8 @@ import android.media.AudioTrack;
 final class Music {
     /** Music volume (a setting), 0..1. */
     static volatile float volume=.8f;
+    /** 1 while Slayer narrates the story ({@link Narrator}): the music sinks under her voice. */
+    static volatile float duck;
     static final int RATE=MusicSynth.RATE;
 
     private static final class Set {short[] amb,combat,impact;}
@@ -20,7 +22,7 @@ final class Music {
     private volatile int theme=-1;private volatile boolean on,combat,paused,alive=true;
     private Thread mixer;private AudioTrack track;
     // mixer state (mixer thread only)
-    private int ia,ic,ii=-1;private float ga,gc,gi;private boolean wasCombat;private int playing=-1;private float master;
+    private int ia,ic,ii=-1;private float ga,gc,gi;private boolean wasCombat;private int playing=-1;private float master,dk;
 
     Music(){
         mixer=new Thread(this::run,"music");mixer.setDaemon(true);mixer.start();
@@ -83,16 +85,16 @@ final class Music {
         wasCombat=c;
         float tA=on?(c?.18f:1f):0,tC=c&&on?1f:0,tM=on?volume:0;
         // per-sample glide rates: the drop is quick, the fade-out slow
-        float rA=1f/(RATE*(c?.6f:3f)),rC=1f/(RATE*(c?.15f:3.5f)),rM=1f/(RATE*1.2f);
+        float rA=1f/(RATE*(c?.6f:3f)),rC=1f/(RATE*(c?.15f:3.5f)),rM=1f/(RATE*1.2f),rD=1f/(RATE*.8f),tD=duck;
         short[] A=s.amb,C=s.combat,I=s.impact;
         for(int f=0;f<frames;f++){
-            ga+=Math.max(-rA,Math.min(rA,tA-ga));gc+=Math.max(-rC,Math.min(rC,tC-gc));master+=Math.max(-rM,Math.min(rM,tM-master));
+            ga+=Math.max(-rA,Math.min(rA,tA-ga));gc+=Math.max(-rC,Math.min(rC,tC-gc));master+=Math.max(-rM,Math.min(rM,tM-master));dk+=Math.max(-rD,Math.min(rD,tD-dk));
             float l=0,r=0;
             if(ga>1e-4f){l+=A[ia]*ga*.85f;r+=A[ia+1]*ga*.85f;}
             ia+=2;if(ia>=A.length)ia=0;
             if(gc>1e-4f){l+=C[ic]*gc;r+=C[ic+1]*gc;ic+=2;if(ic>=C.length)ic=0;}else ic=0;
             if(ii>=0){l+=I[ii]*gi;r+=I[ii+1]*gi;ii+=2;if(ii>=I.length)ii=-1;}
-            float m=master*.8f;l*=m;r*=m;
+            float m=master*.8f*(1-.65f*dk);l*=m;r*=m;
             out[f*2]=(short)Math.max(-32767,Math.min(32767,l));out[f*2+1]=(short)Math.max(-32767,Math.min(32767,r));
         }
     }

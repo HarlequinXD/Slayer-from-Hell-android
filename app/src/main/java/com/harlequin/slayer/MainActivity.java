@@ -28,12 +28,14 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
     private GLSurfaceView gl;private Game game;private Hud hud;
     /** What is being played: a campaign map index, or -1 (custom / editor test); the map itself for restarts. */
     private int campaign=-1;private SectorMap playing;private boolean fromEditor;
+    private AndroidVoice tts;
 
     @Override protected void onCreate(Bundle b){
         super.onCreate(b);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON|WindowManager.LayoutParams.FLAG_FULLSCREEN);
         if(android.os.Build.VERSION.SDK_INT>=28)getWindow().getAttributes().layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         sfx=new Sfx(this);store=new MapStore(getFilesDir());
+        tts=new AndroidVoice(this);Narrator.voice=tts;   // Slayer's voice for the story
         music=new Music();music.prepare(MusicSynth.HELL);music.prepare(MusicSynth.TECH);   // rendered in the background while she reads the menu
         root=new FrameLayout(this);setContentView(root);
         layer=new Overlay(this);root.addView(layer);controls=new Controls(dev,layer,this);
@@ -217,7 +219,54 @@ public final class MainActivity extends Activity implements MenuView.Host,Editor
         if(menu!=null&&menu.back())return;
         super.onBackPressed();
     }
-    @Override protected void onDestroy(){music.release();super.onDestroy();}
-    @Override protected void onPause(){super.onPause();if(gl!=null)gl.onPause();if(game!=null&&overlay==null&&view3d==null)pauseGame();sfx.pause();music.pause();if(editor!=null)editor.autoSave();}
-    @Override protected void onResume(){super.onResume();scanPads();if(gl!=null)gl.onResume();sfx.resume();music.resume();immersive();}
+    @Override protected void onDestroy(){music.release();Narrator.voice=null;tts.shutdown();super.onDestroy();}
+    @Override protected void onPause(){super.onPause();if(gl!=null)gl.onPause();if(game!=null&&overlay==null&&view3d==null)pauseGame();sfx.pause();music.pause();Narrator.pauseAll();if(editor!=null)editor.autoSave();}
+    @Override protected void onResume(){super.onResume();scanPads();if(gl!=null)gl.onResume();sfx.resume();music.resume();Narrator.resumeAll();immersive();}
+
+    /**
+     * Slayer's voice on Android: the phone's own text-to-speech engine (Google's or Samsung's), with the deepest-sounding
+     * installed English female voice, pitched down and slowed for the trailer read. Renders paragraphs to WAV files for
+     * {@link Narrator} to process and play.
+     */
+    static final class AndroidVoice implements Narrator.Voice,android.speech.tts.TextToSpeech.OnInitListener {
+        private final android.speech.tts.TextToSpeech tts;private final java.util.concurrent.CountDownLatch ready=new java.util.concurrent.CountDownLatch(1);
+        private volatile boolean ok;
+        private final java.util.Map<String,java.util.concurrent.CountDownLatch> waiting=new java.util.concurrent.ConcurrentHashMap<>();
+        private final java.util.Map<String,Boolean> results=new java.util.concurrent.ConcurrentHashMap<>();
+        AndroidVoice(android.content.Context c){tts=new android.speech.tts.TextToSpeech(c.getApplicationContext(),this);}
+        @Override public void onInit(int status){
+            try{
+                if(status!=android.speech.tts.TextToSpeech.SUCCESS)return;
+                android.speech.tts.Voice best=null;int bestScore=Integer.MIN_VALUE;
+                java.util.Set<android.speech.tts.Voice> all=null;try{all=tts.getVoices();}catch(Throwable ignored){}
+                if(all!=null)for(android.speech.tts.Voice v:all){
+                    java.util.Locale l=v.getLocale();if(l==null||!"en".equals(l.getLanguage()))continue;
+                    String n=v.getName().toLowerCase(java.util.Locale.US);int sc=v.getQuality()/100;
+                    if(v.getFeatures()!=null&&v.getFeatures().contains(android.speech.tts.TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED))sc-=50;
+                    if(v.isNetworkConnectionRequired())sc-=8;
+                    if(n.contains("female")||n.contains("smtf")||n.matches(".*-x-(sfg|tpf|tpc|iob|iog)-.*"))sc+=20;           // female voices
+                    if((n.contains("male")&&!n.contains("female"))||n.contains("smtm")||n.matches(".*-x-(iol|iom|tpd)-.*"))sc-=20;
+                    if("US".equals(l.getCountry()))sc+=3;else if("GB".equals(l.getCountry()))sc+=2;
+                    if(sc>bestScore){bestScore=sc;best=v;}}
+                if(best!=null)tts.setVoice(best);else tts.setLanguage(java.util.Locale.US);
+                tts.setPitch(.78f);tts.setSpeechRate(.86f);   // deep and deliberate: the trailer read
+                tts.setOnUtteranceProgressListener(new android.speech.tts.UtteranceProgressListener(){
+                    @Override public void onStart(String id){}
+                    @Override public void onDone(String id){done(id,true);}
+                    @Override @SuppressWarnings("deprecation") public void onError(String id){done(id,false);}
+                    @Override public void onError(String id,int code){done(id,false);}});
+                ok=true;
+                android.util.Log.i("Slayer","narration voice: "+(best!=null?best.getName():"default"));
+            }finally{ready.countDown();}
+        }
+        private void done(String id,boolean good){results.put(id,good);java.util.concurrent.CountDownLatch l=waiting.remove(id);if(l!=null)l.countDown();}
+        @Override public void render(String text,java.io.File wav) throws Exception {
+            if(!ready.await(15,java.util.concurrent.TimeUnit.SECONDS)||!ok)throw new java.io.IOException("no text-to-speech engine");
+            String id="slayer-"+System.nanoTime();java.util.concurrent.CountDownLatch l=new java.util.concurrent.CountDownLatch(1);waiting.put(id,l);
+            if(tts.synthesizeToFile(text,new Bundle(),wav,id)!=android.speech.tts.TextToSpeech.SUCCESS){waiting.remove(id);throw new java.io.IOException("speech failed");}
+            if(!l.await(90,java.util.concurrent.TimeUnit.SECONDS)){waiting.remove(id);throw new java.io.IOException("speech timed out");}
+            if(!Boolean.TRUE.equals(results.remove(id))||!wav.exists())throw new java.io.IOException("speech failed");
+        }
+        void shutdown(){try{tts.stop();tts.shutdown();}catch(Throwable ignored){}}
+    }
 }
